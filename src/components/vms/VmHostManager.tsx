@@ -14,7 +14,8 @@ import {
   Boxes,
   CheckCircle2,
   AlertTriangle,
-  Globe
+  Globe,
+  Edit3
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { VMHost, AuthType } from '../../types';
@@ -26,6 +27,7 @@ export const VmHostManager: React.FC = () => {
     setSelectedVmId, 
     setActiveTab, 
     setIsAddVmModalOpen, 
+    openEditVmModal,
     deleteVm, 
     testVmConnection 
   } = useFleet();
@@ -127,6 +129,15 @@ export const VmHostManager: React.FC = () => {
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Online ({vm.pingMs}ms)
                   </span>
+
+                  <button
+                    onClick={() => openEditVmModal(vm)}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-300 border border-slate-700 text-xs flex items-center gap-1 transition-colors"
+                    title="Edit VM configuration & credentials"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="hidden sm:inline text-[11px] font-medium">Edit</span>
+                  </button>
                 </div>
               </div>
 
@@ -210,9 +221,18 @@ export const VmHostManager: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => openEditVmModal(vm)}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors text-xs"
+                    title="Edit VM configuration"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Edit</span>
+                  </button>
+
+                  <button
                     onClick={() => handleTestConnection(vm.id)}
                     disabled={isTesting}
-                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors disabled:opacity-50"
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors disabled:opacity-50 text-xs"
                   >
                     <RotateCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin text-cyan-400' : ''}`} />
                     <span>{isTesting ? 'Pinging...' : 'Test Handshake'}</span>

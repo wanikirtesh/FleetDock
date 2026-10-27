@@ -19,7 +19,8 @@ import {
   ArrowUpDown,
   RefreshCw,
   ExternalLink,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Edit3
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { Container, ContainerState } from '../../types';
@@ -30,6 +31,7 @@ export const ContainerList: React.FC = () => {
     vms, 
     selectedVmId, 
     setSelectedVmId,
+    openEditVmModal,
     startContainer, 
     stopContainer, 
     restartContainer, 
@@ -197,6 +199,21 @@ export const ContainerList: React.FC = () => {
               Paused ({containers.filter((c) => c.state === 'paused').length})
             </button>
           </div>
+
+          {/* Edit Host Button (when specific VM selected) */}
+          {selectedVmId !== 'all' && (
+            <button
+              onClick={() => {
+                const targetVm = vms.find((v) => v.id === selectedVmId);
+                if (targetVm) openEditVmModal(targetVm);
+              }}
+              title="Edit configuration, credentials, or endpoint for this VM"
+              className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-cyan-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Edit Host</span>
+            </button>
+          )}
 
           {/* Refresh from VM Button */}
           <button

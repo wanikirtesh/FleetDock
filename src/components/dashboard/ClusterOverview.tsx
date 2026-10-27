@@ -14,7 +14,8 @@ import {
   Layers,
   Play,
   RotateCw,
-  Plus
+  Plus,
+  Edit3
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { VMHost } from '../../types';
@@ -28,6 +29,7 @@ export const ClusterOverview: React.FC = () => {
     setSelectedVmId, 
     setActiveTab, 
     setIsAddVmModalOpen,
+    openEditVmModal,
     setIsDeployModalOpen,
     testVmConnection 
   } = useFleet();
@@ -231,8 +233,20 @@ export const ClusterOverview: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Status Indicator & Ping Button */}
-                  <div className="flex items-center gap-2">
+                  {/* Status Indicator, Edit & Ping Buttons */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditVmModal(vm);
+                      }}
+                      title="Edit VM configuration & credentials"
+                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-300 border border-slate-700 flex items-center gap-1 transition-colors text-[11px]"
+                    >
+                      <Edit3 className="w-3 h-3 text-cyan-400" />
+                      <span className="hidden sm:inline font-mono">Edit</span>
+                    </button>
+
                     <button
                       onClick={(e) => handleTest(vm.id, e)}
                       disabled={isPinging}
@@ -242,7 +256,7 @@ export const ClusterOverview: React.FC = () => {
                       <RotateCw className={`w-3 h-3 ${isPinging ? 'animate-spin text-cyan-400' : ''}`} />
                       <span>{isPinging ? 'Pinging...' : `${vm.pingMs}ms`}</span>
                     </button>
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" title="Host Online" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" title="Host Online" />
                   </div>
                 </div>
 

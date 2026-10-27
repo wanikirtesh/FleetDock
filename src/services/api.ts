@@ -70,6 +70,23 @@ export const api = {
     return res.json();
   },
 
+  updateHost: async (hostId: string, hostData: any): Promise<VMHost> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${hostId}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(hostData),
+    });
+    if (!res.ok) {
+      let errorMsg = `Failed to update host: ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson.message) errorMsg = errJson.message;
+      } catch (_) {}
+      throw new Error(errorMsg);
+    }
+    return res.json();
+  },
+
   pingHost: async (hostId: string) => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${hostId}/ping`), {
       method: 'POST',

@@ -63,7 +63,19 @@ public class VmHost {
         SSH_KEY,
         PASSWORD,
         DOCKER_SOCKET,
-        AGENT_TOKEN
+        AGENT_TOKEN;
+
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public static AuthType fromString(String value) {
+            if (value == null) return SSH_KEY;
+            String normalized = value.trim().toUpperCase().replace("-", "_");
+            for (AuthType type : AuthType.values()) {
+                if (type.name().equals(normalized)) {
+                    return type;
+                }
+            }
+            return SSH_KEY;
+        }
     }
 
     @PrePersist

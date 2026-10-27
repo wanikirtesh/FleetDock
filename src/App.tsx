@@ -19,6 +19,7 @@ import { ContainerShellModal } from './components/containers/ContainerShellModal
 import { ContainerInspectModal } from './components/containers/ContainerInspectModal';
 import { DeployContainerModal } from './components/containers/DeployContainerModal';
 import { AddVmModal } from './components/vms/AddVmModal';
+import { EditVmModal } from './components/vms/EditVmModal';
 import { 
   LayoutDashboard, 
   Boxes, 
@@ -86,6 +87,7 @@ const DashboardContent: React.FC = () => {
       <ContainerInspectModal />
       <DeployContainerModal />
       <AddVmModal />
+      <EditVmModal />
 
       {/* Activity Toast Notifications */}
       <ActivityAlerts />

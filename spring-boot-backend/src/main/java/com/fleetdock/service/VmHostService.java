@@ -1,5 +1,6 @@
 package com.fleetdock.service;
 
+import com.fleetdock.config.DockerClientFactory;
 import com.fleetdock.dto.VmRegistrationRequest;
 import com.fleetdock.entity.AuthCredential;
 import com.fleetdock.entity.VmHost;
@@ -20,6 +21,7 @@ public class VmHostService {
 
     private final VmHostRepository vmHostRepository;
     private final VaultEncryptionService encryptionService;
+    private final DockerClientFactory dockerClientFactory;
 
     @Transactional(readOnly = true)
     public List<VmHost> findAllHosts() {
@@ -77,13 +79,75 @@ public class VmHostService {
 
     @Transactional
     public VmHost updateHost(String id, VmRegistrationRequest request) {
+        log.info("Updating VM host: {} (ID: {}) with endpoint: {}:{}", request.getName(), id, request.getIp(), request.getPort());
         VmHost existing = getHostById(id);
+        
         existing.setName(request.getName());
         existing.setIp(request.getIp());
         existing.setPort(request.getPort());
+        if (request.getAuthType() != null) {
+            existing.setAuthType(request.getAuthType());
+        }
         existing.setUseSudo(request.isUseSudo());
-        existing.setEnvironment(request.getEnvironment());
+        if (request.getEnvironment() != null && !request.getEnvironment().isBlank()) {
+            existing.setEnvironment(request.getEnvironment());
+        }
+        if (request.getOs() != null && !request.getOs().isBlank()) {
+            existing.setOs(request.getOs());
+        }
+        if (request.getArch() != null && !request.getArch().isBlank()) {
+            existing.setArch(request.getArch());
+        }
+        if (request.getCpuCores() > 0) {
+            existing.setCpuCores(request.getCpuCores());
+        }
+        if (request.getMemoryGb() > 0) {
+            existing.setMemoryGb(request.getMemoryGb());
+        }
+        if (request.getDiskGb() > 0) {
+            existing.setDiskGb(request.getDiskGb());
+        }
+
+        // Update credentials if provided
+        AuthCredential cred = existing.getAuthCredential();
+        if (cred == null) {
+            cred = new AuthCredential();
+            existing.setAuthCredential(cred);
+        }
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            cred.setUsername(request.getUsername().trim());
+        }
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            cred.setPassword(encryptionService.encrypt(request.getPassword().trim()));
+        }
+        if (request.getPrivateKey() != null && !request.getPrivateKey().isBlank()) {
+            cred.setPrivateKey(encryptionService.encrypt(request.getPrivateKey().trim()));
+        }
+        if (request.getPassphrase() != null && !request.getPassphrase().isBlank()) {
+            cred.setPassphrase(encryptionService.encrypt(request.getPassphrase().trim()));
+        }
+        if (request.getTlsCa() != null && !request.getTlsCa().isBlank()) {
+            cred.setTlsCa(request.getTlsCa().trim());
+        }
+        if (request.getTlsCert() != null && !request.getTlsCert().isBlank()) {
+            cred.setTlsCert(request.getTlsCert().trim());
+        }
+        if (request.getTlsKey() != null && !request.getTlsKey().isBlank()) {
+            cred.setTlsKey(encryptionService.encrypt(request.getTlsKey().trim()));
+        }
+        if (request.getAgentToken() != null && !request.getAgentToken().isBlank()) {
+            cred.setAgentToken(request.getAgentToken().trim());
+        }
+
         existing.setLastChecked(LocalDateTime.now());
+
+        // Evict cached DockerClient so subsequent queries use updated connection params
+        try {
+            dockerClientFactory.evictClient(id);
+        } catch (Exception e) {
+            log.warn("Could not evict cached DockerClient for host {}: {}", id, e.getMessage());
+        }
+
         return vmHostRepository.save(existing);
     }
 
@@ -94,6 +158,12 @@ public class VmHostService {
 
     @Transactional
     public void deleteHost(String id) {
+        log.info("Deleting VM host ID: {}", id);
+        try {
+            dockerClientFactory.evictClient(id);
+        } catch (Exception e) {
+            log.warn("Could not evict cached DockerClient for host {}: {}", id, e.getMessage());
+        }
         vmHostRepository.deleteById(id);
     }
 }

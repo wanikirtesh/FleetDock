@@ -30,6 +30,12 @@ interface FleetContextType {
   setSelectedContainerForInspect: (c: Container | null) => void;
   isAddVmModalOpen: boolean;
   setIsAddVmModalOpen: (open: boolean) => void;
+  isEditVmModalOpen: boolean;
+  setIsEditVmModalOpen: (open: boolean) => void;
+  editingVm: VMHost | null;
+  setEditingVm: (vm: VMHost | null) => void;
+  openEditVmModal: (vm: VMHost) => void;
+  closeEditVmModal: () => void;
   isDeployModalOpen: boolean;
   setIsDeployModalOpen: (open: boolean) => void;
   clusterStats: ClusterStats;
@@ -163,6 +169,19 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [selectedContainerForInspect, setSelectedContainerForInspect] = useState<Container | null>(null);
 
   const [isAddVmModalOpen, setIsAddVmModalOpen] = useState(false);
+  const [isEditVmModalOpen, setIsEditVmModalOpen] = useState(false);
+  const [editingVm, setEditingVm] = useState<VMHost | null>(null);
+
+  const openEditVmModal = (vm: VMHost) => {
+    setEditingVm(vm);
+    setIsEditVmModalOpen(true);
+  };
+
+  const closeEditVmModal = () => {
+    setIsEditVmModalOpen(false);
+    setEditingVm(null);
+  };
+
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [alerts, setAlerts] = useState<ActivityAlert[]>([]);
 
@@ -411,8 +430,83 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addAlert('success', 'Host Registered', `Added VM ${vmRecord.name} (${vmRecord.ip}).`);
   };
 
-  const updateVm = (id: string, updates: Partial<VMHost>) => {
-    setVms((prev) => prev.map((v) => (v.id === id ? { ...v, ...updates } : v)));
+  const updateVm = async (id: string, updates: Partial<VMHost>) => {
+    if (isBackendConnected) {
+      try {
+        const payload: any = {
+          name: updates.name,
+          ip: updates.ip,
+          port: updates.port,
+          authType: updates.authType ? updates.authType.toUpperCase() : undefined,
+          useSudo: updates.useSudo ?? updates.authPayload?.useSudo ?? true,
+          environment: updates.environment,
+          os: updates.os,
+          arch: updates.arch,
+          cpuCores: updates.cpuCores,
+          memoryGb: updates.memoryGb,
+          diskGb: updates.diskGb,
+          username: updates.authPayload?.username,
+          privateKey: updates.authPayload?.privateKey,
+          password: updates.authPayload?.password,
+          passphrase: updates.authPayload?.passphrase,
+          tlsCa: updates.authPayload?.tlsCa,
+          tlsCert: updates.authPayload?.tlsCert,
+          tlsKey: updates.authPayload?.tlsKey,
+          agentToken: updates.authPayload?.agentToken,
+        };
+        const updated = await api.updateHost(id, payload);
+        setVms((prev) =>
+          prev.map((v) => {
+            if (v.id === id) {
+              return {
+                ...v,
+                ...updates,
+                name: updated.name || updates.name || v.name,
+                ip: updated.ip || updates.ip || v.ip,
+                port: updated.port || updates.port || v.port,
+                useSudo: updated.useSudo ?? updates.useSudo ?? v.useSudo,
+                environment: updated.environment || updates.environment || v.environment,
+                os: updated.os || updates.os || v.os,
+                arch: updated.arch || updates.arch || v.arch,
+                cpuCores: updated.cpuCores || updates.cpuCores || v.cpuCores,
+                memoryGb: updated.memoryGb || updates.memoryGb || v.memoryGb,
+                diskGb: updated.diskGb || updates.diskGb || v.diskGb,
+                tags: updates.tags || v.tags,
+                authType: (updated.authType ? (updated.authType.toLowerCase() as any) : updates.authType) || v.authType,
+                authPayload: {
+                  ...v.authPayload,
+                  ...updates.authPayload,
+                },
+                lastChecked: 'Just now',
+              };
+            }
+            return v;
+          })
+        );
+        addAlert('success', 'Host Persisted in Spring Boot DB', `Updated VM ${updates.name || id} settings in backend database.`);
+        return;
+      } catch (err: any) {
+        console.warn('Backend update failed, falling back to local state:', err);
+        addAlert('warning', 'Backend Update Warning', `Could not persist to backend (${err.message}). Local state updated.`);
+      }
+    }
+
+    setVms((prev) =>
+      prev.map((v) =>
+        v.id === id
+          ? {
+              ...v,
+              ...updates,
+              tags: updates.tags || v.tags,
+              authPayload: {
+                ...v.authPayload,
+                ...updates.authPayload,
+              },
+              lastChecked: 'Just now',
+            }
+          : v
+      )
+    );
     addAlert('info', 'Host Updated', `Configuration updated.`);
   };
 
@@ -773,6 +867,12 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setSelectedContainerForInspect,
         isAddVmModalOpen,
         setIsAddVmModalOpen,
+        isEditVmModalOpen,
+        setIsEditVmModalOpen,
+        editingVm,
+        setEditingVm,
+        openEditVmModal,
+        closeEditVmModal,
         isDeployModalOpen,
         setIsDeployModalOpen,
         clusterStats,
