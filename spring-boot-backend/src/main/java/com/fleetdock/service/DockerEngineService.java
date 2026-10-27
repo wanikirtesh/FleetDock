@@ -266,8 +266,8 @@ public class DockerEngineService {
         return resp.getVolumes().stream().map(v -> {
             Map<String, Object> map = new HashMap<>();
             map.put("name", v.getName());
-            map.put("driver", v.getDriver());
-            map.put("scope", v.getScope() != null ? v.getScope() : "local");
+            map.put("driver", v.getDriver() != null ? v.getDriver() : "local");
+            map.put("scope", "local");
             map.put("mountpoint", v.getMountpoint() != null ? v.getMountpoint() : "");
             return map;
         }).collect(Collectors.toList());
