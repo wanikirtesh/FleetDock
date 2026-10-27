@@ -17,6 +17,7 @@ import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -224,7 +225,7 @@ public class DockerEngineService {
         try {
             client.pullImageCmd(request.getImage())
                     .exec(new PullImageResultCallback())
-                    .awaitCompletion(90, TimeUnit.SECONDS);
+                    .awaitCompletion(90L, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.warn("Image pull notice: {}", e.getMessage());
         }
@@ -416,6 +417,8 @@ public class DockerEngineService {
         try {
             DockerClient client = dockerClientFactory.getClientForHost(host);
             List<String> logLines = new ArrayList<>();
+            CountDownLatch latch = new CountDownLatch(1);
+
             client.logContainerCmd(containerId)
                     .withStdOut(true)
                     .withStdErr(true)
@@ -437,15 +440,19 @@ public class DockerEngineService {
                         @Override
                         public void onError(Throwable throwable) {
                             log.warn("Log fetch error for {}: {}", containerId, throwable.getMessage());
+                            latch.countDown();
                         }
 
                         @Override
-                        public void onComplete() {}
+                        public void onComplete() {
+                            latch.countDown();
+                        }
 
                         @Override
                         public void close() {}
-                    }).awaitCompletion(10, TimeUnit.SECONDS);
+                    });
 
+            latch.await(10L, TimeUnit.SECONDS);
             return logLines;
         } catch (Exception e) {
             log.error("Failed to fetch live logs from Docker client for {}: {}", containerId, e.getMessage());
@@ -469,6 +476,8 @@ public class DockerEngineService {
                     .exec();
 
             StringBuilder output = new StringBuilder();
+            CountDownLatch latch = new CountDownLatch(1);
+
             client.execStartCmd(execCreate.getId())
                     .exec(new ResultCallback<Frame>() {
                         @Override
@@ -482,14 +491,19 @@ public class DockerEngineService {
                         @Override
                         public void onError(Throwable throwable) {
                             output.append("\nError: ").append(throwable.getMessage());
+                            latch.countDown();
                         }
 
                         @Override
-                        public void onComplete() {}
+                        public void onComplete() {
+                            latch.countDown();
+                        }
 
                         @Override
                         public void close() {}
-                    }).awaitCompletion(30, TimeUnit.SECONDS);
+                    });
+
+            latch.await(30L, TimeUnit.SECONDS);
 
             InspectExecResponse inspect = client.inspectExecCmd(execCreate.getId()).exec();
             int exitCode = inspect.getExitCode() != null ? inspect.getExitCode() : 0;
