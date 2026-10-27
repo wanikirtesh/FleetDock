@@ -66,6 +66,7 @@ public class VmHostService {
                 .cpuUsagePercent(0.0)
                 .memoryUsedPercent(0.0)
                 .diskUsedPercent(0.0)
+                .useSudo(request.isUseSudo())
                 .authCredential(credential)
                 .createdAt(LocalDateTime.now())
                 .lastChecked(LocalDateTime.now())
@@ -80,6 +81,7 @@ public class VmHostService {
         existing.setName(request.getName());
         existing.setIp(request.getIp());
         existing.setPort(request.getPort());
+        existing.setUseSudo(request.isUseSudo());
         existing.setEnvironment(request.getEnvironment());
         existing.setLastChecked(LocalDateTime.now());
         return vmHostRepository.save(existing);

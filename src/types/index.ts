@@ -10,6 +10,7 @@ export interface VMHost {
   ip: string;
   port: number;
   authType: AuthType;
+  useSudo?: boolean;
   authPayload: {
     username?: string;
     password?: string;
@@ -19,6 +20,7 @@ export interface VMHost {
     tlsKey?: string;
     tlsCa?: string;
     agentToken?: string;
+    useSudo?: boolean;
   };
   environment: 'Production' | 'Staging' | 'Development' | 'Edge';
   os: string;

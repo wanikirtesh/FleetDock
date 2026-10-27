@@ -37,4 +37,6 @@ public class AuthCredential {
     private String tlsKey;
 
     private String agentToken;
+
+    private Boolean useSudo;
 }

@@ -36,4 +36,5 @@ public class VmRegistrationRequest {
     private String tlsCert;
     private String tlsKey;
     private String agentToken;
+    private boolean useSudo = true;
 }

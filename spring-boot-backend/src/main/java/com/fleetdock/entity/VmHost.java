@@ -31,6 +31,10 @@ public class VmHost {
     private AuthType authType;
 
     @Column(nullable = false)
+    @Builder.Default
+    private boolean useSudo = true;
+
+    @Column(nullable = false)
     private String environment; // Production, Staging, Development, Edge
 
     private String os;

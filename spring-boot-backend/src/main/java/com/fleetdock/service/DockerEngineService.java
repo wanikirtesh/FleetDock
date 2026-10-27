@@ -27,12 +27,17 @@ public class DockerEngineService {
 
     private final VmHostService vmHostService;
     private final DockerClientFactory dockerClientFactory;
+    private final SshDockerExecutorService sshDockerExecutorService;
 
     /**
      * Queries real Docker system info and latency from target VM
      */
     public Map<String, Object> testConnection(String vmId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.testConnection(host, vmHostService);
+        }
+
         long start = System.currentTimeMillis();
         try {
             DockerClient client = dockerClientFactory.getClientForHost(host);
@@ -62,6 +67,11 @@ public class DockerEngineService {
             );
         } catch (Exception e) {
             log.warn("Docker ping failed for host: {} ({}) -> {}", host.getName(), host.getIp(), e.getMessage());
+            // If connection was reset on port 22, attempt SSH fallback
+            if (host.getPort() == 22 || e.getMessage().contains("Connection reset")) {
+                log.info("Attempting SSH fallback test for host {}", host.getIp());
+                return sshDockerExecutorService.testConnection(host, vmHostService);
+            }
             host.setStatus("error");
             vmHostService.save(host);
             return Map.of(
@@ -76,6 +86,10 @@ public class DockerEngineService {
      */
     public List<ContainerDto> listContainers(String vmId, String filter) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.listContainers(host, filter);
+        }
+
         try {
             DockerClient client = dockerClientFactory.getClientForHost(host);
 
@@ -165,24 +179,40 @@ public class DockerEngineService {
 
     public void startContainer(String vmId, String containerId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            sshDockerExecutorService.startContainer(host, containerId);
+            return;
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         client.startContainerCmd(containerId).exec();
     }
 
     public void stopContainer(String vmId, String containerId, int timeoutSeconds) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            sshDockerExecutorService.stopContainer(host, containerId, timeoutSeconds);
+            return;
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         client.stopContainerCmd(containerId).withTimeout(timeoutSeconds).exec();
     }
 
     public void restartContainer(String vmId, String containerId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            sshDockerExecutorService.restartContainer(host, containerId);
+            return;
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         client.restartContainerCmd(containerId).exec();
     }
 
     public void removeContainer(String vmId, String containerId, boolean force) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            sshDockerExecutorService.removeContainer(host, containerId, force);
+            return;
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         client.removeContainerCmd(containerId).withForce(force).exec();
     }
@@ -259,6 +289,9 @@ public class DockerEngineService {
 
     public List<Map<String, Object>> listVolumes(String vmId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.listVolumes(host);
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         ListVolumesResponse resp = client.listVolumesCmd().exec();
         if (resp.getVolumes() == null) return Collections.emptyList();
@@ -275,6 +308,9 @@ public class DockerEngineService {
 
     public List<Map<String, Object>> listNetworks(String vmId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.listNetworks(host);
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         List<Network> networks = client.listNetworksCmd().exec();
         if (networks == null) return Collections.emptyList();
@@ -292,6 +328,22 @@ public class DockerEngineService {
     public SseEmitter streamLogs(String vmId, String containerId, int tail, boolean follow) {
         VmHost host = vmHostService.getHostById(vmId);
         SseEmitter emitter = new SseEmitter(180_000L);
+
+        if (sshDockerExecutorService.isSshHost(host)) {
+            try {
+                String logs = sshDockerExecutorService.getLogs(host, containerId, tail);
+                for (String line : logs.split("\\r?\\n")) {
+                    if (!line.trim().isEmpty()) {
+                        emitter.send(SseEmitter.event().data(line));
+                    }
+                }
+                emitter.complete();
+            } catch (Exception e) {
+                log.error("Failed to fetch logs via SSH for container {}: {}", containerId, e.getMessage());
+                emitter.completeWithError(e);
+            }
+            return emitter;
+        }
 
         try {
             DockerClient client = dockerClientFactory.getClientForHost(host);

@@ -519,6 +519,204 @@ public class DockerEngineService {
 `,
   },
   {
+    filename: 'SshDockerExecutorService.java',
+    path: 'src/main/java/com/fleetdock/service/SshDockerExecutorService.java',
+    language: 'java',
+    description: 'Executes Docker and sudo docker commands over SSH (JSch) when Docker daemon is not exposed over TCP or requires root privileges',
+    content: `package com.fleetdock.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fleetdock.dto.ContainerDto;
+import com.fleetdock.entity.VmHost;
+import com.jcraft.jsch.ChannelExec;
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.Session;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SshDockerExecutorService {
+
+    private final VaultEncryptionService encryptionService;
+    private final ObjectMapper objectMapper;
+
+    public boolean isSshHost(VmHost host) {
+        if (host.getAuthType() == VmHost.AuthType.SSH_KEY || host.getAuthType() == VmHost.AuthType.PASSWORD) {
+            return true;
+        }
+        return host.getPort() == 22;
+    }
+
+    public String executeCommandWithFallback(VmHost host, String dockerSubCommand) throws Exception {
+        try {
+            return executeSshCommand(host, dockerSubCommand, host.isUseSudo());
+        } catch (Exception e) {
+            if (host.isUseSudo()) {
+                log.warn("Execution with sudo failed on {}: {}, attempting fallback without sudo", host.getIp(), e.getMessage());
+                try {
+                    return executeSshCommand(host, dockerSubCommand, false);
+                } catch (Exception ignored) {}
+            }
+            throw e;
+        }
+    }
+
+    private String executeSshCommand(VmHost host, String dockerSubCommand, boolean withSudo) throws Exception {
+        JSch jsch = new JSch();
+        String username = "root";
+        String password = null;
+        String privateKey = null;
+        String passphrase = null;
+
+        if (host.getAuthCredential() != null) {
+            if (host.getAuthCredential().getUsername() != null && !host.getAuthCredential().getUsername().isBlank()) {
+                username = host.getAuthCredential().getUsername().trim();
+            }
+            if (host.getAuthCredential().getPassword() != null) {
+                password = encryptionService.decrypt(host.getAuthCredential().getPassword());
+            }
+            if (host.getAuthCredential().getPrivateKey() != null) {
+                privateKey = encryptionService.decrypt(host.getAuthCredential().getPrivateKey());
+            }
+            if (host.getAuthCredential().getPassphrase() != null) {
+                passphrase = encryptionService.decrypt(host.getAuthCredential().getPassphrase());
+            }
+        }
+
+        if (privateKey != null && !privateKey.isBlank()) {
+            byte[] keyBytes = privateKey.getBytes(StandardCharsets.UTF_8);
+            byte[] passBytes = (passphrase != null && !passphrase.isBlank()) 
+                    ? passphrase.getBytes(StandardCharsets.UTF_8) : null;
+            jsch.addIdentity("key-" + host.getId(), keyBytes, null, passBytes);
+        }
+
+        int port = host.getPort() > 0 ? host.getPort() : 22;
+        Session session = jsch.getSession(username, host.getIp().trim(), port);
+        if (password != null && !password.isBlank()) {
+            session.setPassword(password);
+        }
+
+        Properties config = new Properties();
+        config.put("StrictHostKeyChecking", "no");
+        config.put("PreferredAuthentications", "publickey,password,keyboard-interactive");
+        session.setConfig(config);
+        session.setTimeout(15000);
+        session.connect(15000);
+
+        ChannelExec channel = null;
+        try {
+            channel = (ChannelExec) session.openChannel("exec");
+            String fullCommand = withSudo ? "sudo -S -p '' docker " + dockerSubCommand : "docker " + dockerSubCommand;
+            channel.setCommand(fullCommand);
+
+            InputStream in = channel.getInputStream();
+            InputStream err = channel.getErrStream();
+            OutputStream out = channel.getOutputStream();
+            channel.connect(10000);
+
+            if (withSudo && password != null && !password.isBlank()) {
+                try {
+                    out.write((password + "\\n").getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                } catch (Exception ignored) {}
+            }
+
+            StringBuilder stdout = new StringBuilder();
+            StringBuilder stderr = new StringBuilder();
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                 BufferedReader errReader = new BufferedReader(new InputStreamReader(err, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) stdout.append(line).append("\\n");
+                while ((line = errReader.readLine()) != null) stderr.append(line).append("\\n");
+            }
+
+            while (!channel.isClosed()) Thread.sleep(40);
+
+            int exitStatus = channel.getExitStatus();
+            if (exitStatus != 0 && stdout.length() == 0) {
+                throw new RuntimeException("Docker command failed: " + stderr.toString().trim());
+            }
+            return stdout.toString().trim();
+        } finally {
+            if (channel != null && channel.isConnected()) channel.disconnect();
+            if (session.isConnected()) session.disconnect();
+        }
+    }
+
+    public List<ContainerDto> listContainers(VmHost host, String filter) {
+        try {
+            String output = executeCommandWithFallback(host, "ps -a --format '{{json .}}'");
+            if (output.isBlank()) return Collections.emptyList();
+
+            List<ContainerDto> result = new ArrayList<>();
+            for (String line : output.split("\\\\r?\\\\n")) {
+                line = line.trim();
+                if (line.isEmpty() || !line.startsWith("{")) continue;
+                try {
+                    JsonNode node = objectMapper.readTree(line);
+                    String id = node.path("ID").asText("");
+                    String names = node.path("Names").asText("").replaceFirst("^/", "");
+                    String image = node.path("Image").asText("");
+                    String state = node.path("State").asText("stopped").toLowerCase();
+                    String status = node.path("Status").asText("");
+                    String createdAt = node.path("CreatedAt").asText("");
+                    String command = node.path("Command").asText("");
+
+                    if ("running".equalsIgnoreCase(filter) && !"running".equalsIgnoreCase(state)) continue;
+                    if (("stopped".equalsIgnoreCase(filter) || "exited".equalsIgnoreCase(filter)) && "running".equalsIgnoreCase(state)) continue;
+
+                    result.add(ContainerDto.builder()
+                            .id(id.substring(0, Math.min(12, id.length())))
+                            .vmId(host.getId())
+                            .name(names.isEmpty() ? id : names)
+                            .image(image)
+                            .state(state)
+                            .statusText(status.isEmpty() ? state : status)
+                            .created(createdAt)
+                            .command(command)
+                            .ports(new ArrayList<>())
+                            .envVars(new HashMap<>())
+                            .restartPolicy("unless-stopped")
+                            .build());
+                } catch (Exception ignored) {}
+            }
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to query Docker daemon via SSH: " + e.getMessage(), e);
+        }
+    }
+
+    public void startContainer(VmHost host, String containerId) {
+        try { executeCommandWithFallback(host, "start " + containerId); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    public void stopContainer(VmHost host, String containerId, int timeoutSeconds) {
+        try { executeCommandWithFallback(host, "stop -t " + timeoutSeconds + " " + containerId); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    public void restartContainer(VmHost host, String containerId) {
+        try { executeCommandWithFallback(host, "restart " + containerId); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    public void removeContainer(VmHost host, String containerId, boolean force) {
+        try { executeCommandWithFallback(host, "rm " + (force ? "-f " : "") + containerId); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+}
+`,
+  },
+  {
     filename: 'ComposeService.java',
     path: 'src/main/java/com/fleetdock/service/ComposeService.java',
     language: 'java',

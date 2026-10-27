@@ -40,6 +40,7 @@ export const AddVmModal: React.FC = () => {
   const [tlsCert, setTlsCert] = useState('');
   const [tlsKey, setTlsKey] = useState('');
   const [agentToken, setAgentToken] = useState('fd_agt_live_' + Math.random().toString(36).substring(2, 12));
+  const [useSudo, setUseSudo] = useState(true);
 
   // Connection testing state
   const [isTesting, setIsTesting] = useState(false);
@@ -87,6 +88,7 @@ export const AddVmModal: React.FC = () => {
       ip: ip.trim(),
       port: Number(port),
       authType,
+      useSudo,
       authPayload: {
         username: sshUser,
         privateKey: sshPrivateKey || '-----BEGIN RSA PRIVATE KEY-----\n[ENCRYPTED_IN_SPRING_BOOT_VAULT]\n-----END RSA PRIVATE KEY-----',
@@ -96,6 +98,7 @@ export const AddVmModal: React.FC = () => {
         tlsCert,
         tlsKey,
         agentToken,
+        useSudo,
       },
       environment,
       os,
@@ -342,6 +345,34 @@ export const AddVmModal: React.FC = () => {
                     className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Sudo privilege option for SSH-based connections */}
+            {(authType === 'ssh_key' || authType === 'password') && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-cyan-950/20 border border-cyan-800/40">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded bg-cyan-500/10 text-cyan-400">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-slate-200">
+                      Query & Orchestrate Using Sudo (<code className="text-cyan-400 font-mono">sudo docker</code>)
+                    </span>
+                    <p className="text-[11px] text-slate-400">
+                      Executes Docker commands with root elevation over SSH (needed when user is not in the docker group or accessing /var/run/docker.sock)
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={useSudo}
+                    onChange={(e) => setUseSudo(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                </label>
               </div>
             )}
 

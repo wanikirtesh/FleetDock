@@ -86,13 +86,14 @@ app.get('/api/v1/hosts', (req, res) => {
 });
 
 app.post('/api/v1/hosts/register', (req, res) => {
-  const { name, ip, port, authType, environment, os, arch, cpuCores, memoryGb, diskGb } = req.body;
+  const { name, ip, port, authType, useSudo, environment, os, arch, cpuCores, memoryGb, diskGb } = req.body;
   const newVm = {
     id: `vm-${Date.now().toString(36)}`,
     name: name || 'new-host',
     ip: ip || '127.0.0.1',
     port: port ? parseInt(port, 10) : 22,
     authType: authType || 'SSH_KEY',
+    useSudo: useSudo !== undefined ? Boolean(useSudo) : true,
     environment: environment || 'Production',
     os: os || 'Linux',
     arch: arch || 'x86_64',
