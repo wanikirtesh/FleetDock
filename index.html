@@ -9,6 +9,20 @@
     <meta property="og:description" content="Centralized dashboard to register remote VMs, manage SSH/Docker credentials, orchestrate containers, stream live logs, and explore docker-compose environments." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <!-- Prevent Flash of Wrong Theme: apply data-theme before first paint -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('fleetdock_theme');
+          var preferred = (saved === 'light' || saved === 'dark')
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', preferred);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

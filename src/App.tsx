@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { FleetProvider, useFleet } from './context/FleetContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { ActivityAlerts } from './components/layout/ActivityAlerts';
@@ -97,8 +98,10 @@ const DashboardContent: React.FC = () => {
 
 export default function App() {
   return (
-    <FleetProvider>
-      <DashboardContent />
-    </FleetProvider>
+    <ThemeProvider>
+      <FleetProvider>
+        <DashboardContent />
+      </FleetProvider>
+    </ThemeProvider>
   );
 }

@@ -15,6 +15,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { ThemeToggle } from './ThemeToggle';
 
 export const Header: React.FC = () => {
   const { 
@@ -134,6 +135,9 @@ export const Header: React.FC = () => {
             <Server className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Register VM</span>
           </button>
+
+          {/* Theme Toggle */}
+          <ThemeToggle />
 
           {/* Reset Demo Button */}
           <button
