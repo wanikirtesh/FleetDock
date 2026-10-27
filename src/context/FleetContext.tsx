@@ -252,6 +252,23 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           setComposeStacks(mergedStacks);
         }
 
+        // Fetch volumes and networks for all hosts
+        const volumePromises = remoteHosts.map((h) =>
+          api.getVolumes(h.id).catch(() => [])
+        );
+        const volumeLists = await Promise.all(volumePromises);
+        const mergedVolumes = volumeLists.flat();
+        setVolumes(mergedVolumes);
+        localStorage.setItem('fleetdock_volumes', JSON.stringify(mergedVolumes));
+
+        const networkPromises = remoteHosts.map((h) =>
+          api.getNetworks(h.id).catch(() => [])
+        );
+        const networkLists = await Promise.all(networkPromises);
+        const mergedNetworks = networkLists.flat();
+        setNetworks(mergedNetworks);
+        localStorage.setItem('fleetdock_networks', JSON.stringify(mergedNetworks));
+
         addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${mergedContainers.length} live container(s).`);
       } else {
         // Backend DB has 0 registered hosts
@@ -293,6 +310,23 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const mergedContainers = containerLists.flat();
         setContainers(mergedContainers);
         localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
+
+        // Fetch volumes and networks
+        const volumePromises = remoteHosts.map((h) =>
+          api.getVolumes(h.id).catch(() => [])
+        );
+        const volumeLists = await Promise.all(volumePromises);
+        const mergedVolumes = volumeLists.flat();
+        setVolumes(mergedVolumes);
+        localStorage.setItem('fleetdock_volumes', JSON.stringify(mergedVolumes));
+
+        const networkPromises = remoteHosts.map((h) =>
+          api.getNetworks(h.id).catch(() => [])
+        );
+        const networkLists = await Promise.all(networkPromises);
+        const mergedNetworks = networkLists.flat();
+        setNetworks(mergedNetworks);
+        localStorage.setItem('fleetdock_networks', JSON.stringify(mergedNetworks));
 
         addAlert('success', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Loaded ${remoteHosts.length} host(s) and ${mergedContainers.length} container(s) from database.`);
       } else {
@@ -345,7 +379,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     fetchFromBackend();
   }, []);
 
-  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers & compose stacks
+  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers, compose stacks, volumes & networks
   useEffect(() => {
     if (isBackendConnected && selectedVmId && selectedVmId !== 'all') {
       api.getContainers(selectedVmId)
@@ -372,6 +406,30 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         })
         .catch((err) => {
           console.warn(`Could not refresh compose stacks for host ${selectedVmId}:`, err);
+        });
+
+      api.getVolumes(selectedVmId)
+        .then((vols) => {
+          setVolumes((prev) => {
+            const updated = [...prev.filter((v) => v.vmId !== selectedVmId), ...vols];
+            localStorage.setItem('fleetdock_volumes', JSON.stringify(updated));
+            return updated;
+          });
+        })
+        .catch((err) => {
+          console.warn(`Could not refresh volumes for host ${selectedVmId}:`, err);
+        });
+
+      api.getNetworks(selectedVmId)
+        .then((nets) => {
+          setNetworks((prev) => {
+            const updated = [...prev.filter((n) => n.vmId !== selectedVmId), ...nets];
+            localStorage.setItem('fleetdock_networks', JSON.stringify(updated));
+            return updated;
+          });
+        })
+        .catch((err) => {
+          console.warn(`Could not refresh networks for host ${selectedVmId}:`, err);
         });
     }
   }, [selectedVmId, isBackendConnected]);

@@ -1,4 +1,4 @@
-import { VMHost, Container, ComposeStack } from '../types';
+import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork } from '../types';
 
 export const getApiBaseUrl = (): string => {
   return localStorage.getItem('fleetdock_backend_url') || '';
@@ -262,16 +262,37 @@ export const api = {
     return res.json();
   },
 
-  getVolumes: async (vmId: string): Promise<any[]> => {
+  getVolumes: async (vmId: string): Promise<DockerVolume[]> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/volumes`));
     if (!res.ok) return [];
-    return res.json();
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((v: any) => ({
+      name: v.name || v.Name || '',
+      vmId,
+      driver: v.driver || v.Driver || 'local',
+      sizeMb: typeof v.sizeMb === 'number' ? v.sizeMb : 0,
+      scope: v.scope || v.Scope || 'local',
+      inUseBy: Array.isArray(v.inUseBy) ? v.inUseBy : [],
+      createdAt: v.createdAt || v.CreatedAt || new Date().toISOString().substring(0, 10),
+    }));
   },
 
-  getNetworks: async (vmId: string): Promise<any[]> => {
+  getNetworks: async (vmId: string): Promise<DockerNetwork[]> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/networks`));
     if (!res.ok) return [];
-    return res.json();
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((n: any) => ({
+      id: n.id || n.Id || '',
+      vmId,
+      name: n.name || n.Name || '',
+      driver: n.driver || n.Driver || 'bridge',
+      subnet: n.subnet || n.Subnet || (n.IPAM?.Config?.[0]?.Subnet) || 'N/A',
+      gateway: n.gateway || n.Gateway || (n.IPAM?.Config?.[0]?.Gateway) || 'N/A',
+      containersCount: typeof n.containersCount === 'number' ? n.containersCount : (n.Containers ? Object.keys(n.Containers).length : 0),
+      scope: n.scope || n.Scope || 'local',
+    }));
   },
 
   getComposeStacks: async (vmId: string): Promise<ComposeStack[]> => {

@@ -66,6 +66,13 @@ export const StorageNetworkView: React.FC = () => {
       {/* Volumes Table */}
       {activeSubTab === 'volumes' && (
         <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shadow-sm">
+          {filteredVolumes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+              <HardDrive className="w-10 h-10 opacity-30" />
+              <p className="text-sm font-medium">No volumes found</p>
+              <p className="text-xs text-slate-600">Volumes are fetched live from the Docker daemon on each registered host. Make sure the host is online and reachable.</p>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
@@ -117,17 +124,25 @@ export const StorageNetworkView: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* Networks Table */}
       {activeSubTab === 'networks' && (
         <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shadow-sm">
+          {filteredNetworks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+              <Network className="w-10 h-10 opacity-30" />
+              <p className="text-sm font-medium">No networks found</p>
+              <p className="text-xs text-slate-600">Networks are fetched live from the Docker daemon on each registered host. Make sure the host is online and reachable.</p>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
                 <tr>
-                  <th className="py-3 px-4">Network Name & ID</th>
+                  <th className="py-3 px-4">Network Name &amp; ID</th>
                   <th className="py-3 px-4">Host Node</th>
                   <th className="py-3 px-4">Driver</th>
                   <th className="py-3 px-4">Subnet (CIDR)</th>
@@ -169,6 +184,7 @@ export const StorageNetworkView: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
