@@ -64,11 +64,11 @@
             <version>${docker-java.version}</version>
         </dependency>
 
-        <!-- SSH Tunneling for remote VM Docker socket -->
+        <!-- Modern SSH Client with OpenSSH format, Ed25519, and RSA-SHA2 support -->
         <dependency>
-            <groupId>com.jcraft</groupId>
+            <groupId>com.github.mwiede</groupId>
             <artifactId>jsch</artifactId>
-            <version>0.1.55</version>
+            <version>0.2.20</version>
         </dependency>
 
         <!-- Lombok -->

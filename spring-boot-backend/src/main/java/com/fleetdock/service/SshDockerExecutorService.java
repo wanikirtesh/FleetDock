@@ -77,10 +77,41 @@ public class SshDockerExecutorService {
         }
 
         if (privateKey != null && !privateKey.isBlank()) {
-            byte[] keyBytes = privateKey.getBytes(StandardCharsets.UTF_8);
-            byte[] passBytes = (passphrase != null && !passphrase.isBlank()) 
-                    ? passphrase.getBytes(StandardCharsets.UTF_8) : null;
-            jsch.addIdentity("key-" + host.getId(), keyBytes, null, passBytes);
+            String cleanedKey = privateKey.trim();
+            // Convert literal \n or Windows \r\n to Unix newlines
+            if (cleanedKey.contains("\\n")) {
+                cleanedKey = cleanedKey.replace("\\r\\n", "\n").replace("\\n", "\n");
+            }
+            if (!cleanedKey.endsWith("\n")) {
+                cleanedKey += "\n";
+            }
+
+            try {
+                // Check if user entered a file path (e.g., C:\Users\... or /home/.../.ssh/id_rsa)
+                java.io.File keyFile = new java.io.File(cleanedKey.trim());
+                if (keyFile.exists() && keyFile.isFile()) {
+                    if (passphrase != null && !passphrase.isBlank()) {
+                        jsch.addIdentity(keyFile.getAbsolutePath(), passphrase.trim());
+                    } else {
+                        jsch.addIdentity(keyFile.getAbsolutePath());
+                    }
+                    log.info("Loaded SSH identity from local file: {}", keyFile.getAbsolutePath());
+                } else {
+                    byte[] keyBytes = cleanedKey.getBytes(StandardCharsets.UTF_8);
+                    byte[] passBytes = (passphrase != null && !passphrase.isBlank()) 
+                            ? passphrase.trim().getBytes(StandardCharsets.UTF_8) : null;
+                    jsch.addIdentity("key-" + host.getId(), keyBytes, null, passBytes);
+                    log.info("Loaded in-memory SSH private key for host: {}", host.getIp());
+                }
+            } catch (Exception keyEx) {
+                log.warn("Could not parse private key for host {}: {}", host.getIp(), keyEx.getMessage());
+                if (password != null && !password.isBlank()) {
+                    log.info("Falling back to password authentication for host {}", host.getIp());
+                } else {
+                    throw new RuntimeException("Invalid SSH Private Key for " + host.getIp() + ": " + keyEx.getMessage()
+                            + ". Ensure key is in OpenSSH or PEM format, or configure password authentication.", keyEx);
+                }
+            }
         }
 
         int port = host.getPort() > 0 ? host.getPort() : 22;
@@ -93,6 +124,9 @@ public class SshDockerExecutorService {
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");
         config.put("PreferredAuthentications", "publickey,password,keyboard-interactive");
+        // Ensure compatibility with modern OpenSSH 8.8+ (rsa-sha2-256, rsa-sha2-512, ssh-ed25519)
+        config.put("server_host_key", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa");
+        config.put("PubkeyAcceptedAlgorithms", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa");
         session.setConfig(config);
         session.setTimeout(15000);
         session.connect(15000);
