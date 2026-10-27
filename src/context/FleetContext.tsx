@@ -90,46 +90,68 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const [vms, setVms] = useState<VMHost[]>(() => {
     try {
+      const isMock = localStorage.getItem('fleetdock_datasource') === 'mock';
       const saved = localStorage.getItem('fleetdock_vms');
-      return saved ? JSON.parse(saved) : INITIAL_VMS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // If saved data was the old mock dataset and not explicitly mock mode, clear it
+        if (!isMock && parsed.some((p: any) => p.id === 'vm-prod-01')) {
+          localStorage.removeItem('fleetdock_vms');
+          return [];
+        }
+        return parsed;
+      }
+      return isMock ? INITIAL_VMS : [];
     } catch {
-      return INITIAL_VMS;
+      return [];
     }
   });
 
   const [containers, setContainers] = useState<Container[]>(() => {
     try {
+      const isMock = localStorage.getItem('fleetdock_datasource') === 'mock';
       const saved = localStorage.getItem('fleetdock_containers');
-      return saved ? JSON.parse(saved) : INITIAL_CONTAINERS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!isMock && parsed.some((p: any) => p.id === 'c-sp-billing-01')) {
+          localStorage.removeItem('fleetdock_containers');
+          return [];
+        }
+        return parsed;
+      }
+      return isMock ? INITIAL_CONTAINERS : [];
     } catch {
-      return INITIAL_CONTAINERS;
+      return [];
     }
   });
 
   const [composeStacks, setComposeStacks] = useState<ComposeStack[]>(() => {
     try {
+      const isMock = localStorage.getItem('fleetdock_datasource') === 'mock';
       const saved = localStorage.getItem('fleetdock_compose');
-      return saved ? JSON.parse(saved) : INITIAL_COMPOSE_STACKS;
+      return saved ? JSON.parse(saved) : (isMock ? INITIAL_COMPOSE_STACKS : []);
     } catch {
-      return INITIAL_COMPOSE_STACKS;
+      return [];
     }
   });
 
   const [volumes, setVolumes] = useState<DockerVolume[]>(() => {
     try {
+      const isMock = localStorage.getItem('fleetdock_datasource') === 'mock';
       const saved = localStorage.getItem('fleetdock_volumes');
-      return saved ? JSON.parse(saved) : INITIAL_VOLUMES;
+      return saved ? JSON.parse(saved) : (isMock ? INITIAL_VOLUMES : []);
     } catch {
-      return INITIAL_VOLUMES;
+      return [];
     }
   });
 
   const [networks, setNetworks] = useState<DockerNetwork[]>(() => {
     try {
+      const isMock = localStorage.getItem('fleetdock_datasource') === 'mock';
       const saved = localStorage.getItem('fleetdock_networks');
-      return saved ? JSON.parse(saved) : INITIAL_NETWORKS;
+      return saved ? JSON.parse(saved) : (isMock ? INITIAL_NETWORKS : []);
     } catch {
-      return INITIAL_NETWORKS;
+      return [];
     }
   });
 
@@ -188,26 +210,35 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setBackendEngineInfo(health.backendEngine || 'Spring Boot 3.3.4 (Java 21)');
 
       const remoteHosts = await api.getHosts();
-      if (remoteHosts && remoteHosts.length > 0) {
-        setVms(remoteHosts);
-        localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
+      setVms(remoteHosts);
+      localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
-        // Fetch containers for each host
+      if (remoteHosts.length > 0) {
+        // Fetch real containers for each host from Docker daemon
         const containerPromises = remoteHosts.map((h) =>
           api.getContainers(h.id).catch(() => [])
         );
         const containerLists = await Promise.all(containerPromises);
         const mergedContainers = containerLists.flat();
+        setContainers(mergedContainers);
+        localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
 
-        if (mergedContainers.length > 0) {
-          setContainers(mergedContainers);
-          localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
+        // Fetch real compose stacks
+        const composePromises = remoteHosts.map((h) =>
+          api.getComposeStacks(h.id).catch(() => [])
+        );
+        const stackLists = await Promise.all(composePromises);
+        const mergedStacks = stackLists.flat();
+        if (mergedStacks.length > 0) {
+          setComposeStacks(mergedStacks);
         }
 
-        addAlert('success', 'Spring Boot DB Synced', `Loaded ${remoteHosts.length} VM host(s) directly from backend database.`);
+        addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${mergedContainers.length} live container(s).`);
       } else {
-        // Backend DB is empty
-        addAlert('info', 'Spring Boot Connected', 'Database is currently empty (0 registered hosts). Click "Seed Spring Boot DB" or "+ Register VM" to add real hosts.');
+        // Backend DB has 0 registered hosts
+        setContainers([]);
+        localStorage.setItem('fleetdock_containers', JSON.stringify([]));
+        addAlert('info', 'Spring Boot Connected', 'Database currently has 0 registered hosts. Click "+ Register VM" to add a host or "Seed Spring Boot DB".');
       }
     } catch (err: any) {
       setIsBackendConnected(false);
@@ -232,23 +263,23 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       localStorage.setItem('fleetdock_datasource', 'spring_boot');
 
       const remoteHosts = await api.getHosts();
-      if (remoteHosts && remoteHosts.length > 0) {
-        setVms(remoteHosts);
-        localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
+      setVms(remoteHosts);
+      localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
+      if (remoteHosts.length > 0) {
         const containerPromises = remoteHosts.map((h) =>
           api.getContainers(h.id).catch(() => [])
         );
         const containerLists = await Promise.all(containerPromises);
         const mergedContainers = containerLists.flat();
-        if (mergedContainers.length > 0) {
-          setContainers(mergedContainers);
-          localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
-        }
+        setContainers(mergedContainers);
+        localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
 
-        addAlert('success', 'Connected to Spring Boot', `Successfully connected to ${health.backendEngine} in ${health.latencyMs}ms. Loaded ${remoteHosts.length} host(s) from database.`);
+        addAlert('success', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Loaded ${remoteHosts.length} host(s) and ${mergedContainers.length} container(s) from database.`);
       } else {
-        addAlert('info', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Database currently has 0 hosts. Click "Seed Demo Hosts" or "Register VM" to populate it.`);
+        setContainers([]);
+        localStorage.setItem('fleetdock_containers', JSON.stringify([]));
+        addAlert('info', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Database currently has 0 hosts. Click "Seed Demo Hosts" or "+ Register VM" to populate it.`);
       }
       return true;
     } catch (err: any) {
@@ -405,46 +436,71 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const host = vms.find((v) => v.id === id);
     if (!host) return { success: false, latency: 0, message: 'Host not found' };
 
-    if (isBackendConnected) {
-      try {
-        const res = await api.pingHost(id);
-        const latency = res.latencyMs || Math.floor(Math.random() * 20 + 10);
-        setVms((prev) =>
-          prev.map((v) =>
-            v.id === id
-              ? { ...v, status: 'online', pingMs: latency, lastChecked: 'Just now' }
-              : v
-          )
-        );
-        addAlert('success', 'Spring Boot Handshake Verified', `Spring Boot pinged ${host.name} via ${host.authType.toUpperCase()} in ${latency}ms.`);
-        return {
-          success: true,
-          latency,
-          message: res.message || `Successfully connected to Docker Daemon on ${host.ip}:${host.port}`,
-        };
-      } catch (e: any) {
-        // fallback
-      }
-    }
+    try {
+      const res = await api.pingHost(id);
 
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const latency = Math.floor(Math.random() * 22 + 9);
+      if (res.status === 'error') {
         setVms((prev) =>
           prev.map((v) =>
-            v.id === id
-              ? { ...v, status: 'online', pingMs: latency, lastChecked: 'Just now' }
-              : v
+            v.id === id ? { ...v, status: 'error', pingMs: 0, lastChecked: 'Just now' } : v
           )
         );
-        addAlert('success', 'Handshake Successful', `Connected to ${host.name} via ${host.authType.toUpperCase()} in ${latency}ms.`);
-        resolve({
-          success: true,
-          latency,
-          message: `Successfully connected to Docker Daemon on ${host.ip}:${host.port} (Docker Engine 27.2.x, API v1.47)`,
-        });
-      }, 500);
-    });
+        addAlert('error', 'Docker Daemon Unreachable', res.message || `Could not connect to Docker daemon on ${host.ip}:${host.port}`);
+        return {
+          success: false,
+          latency: 0,
+          message: res.message || `Connection failed on ${host.ip}:${host.port}`,
+        };
+      }
+
+      const latency = res.latencyMs || 1;
+      setVms((prev) =>
+        prev.map((v) =>
+          v.id === id
+            ? {
+                ...v,
+                status: 'online',
+                pingMs: latency,
+                dockerVersion: res.dockerVersion || v.dockerVersion,
+                apiVersion: res.apiVersion || v.apiVersion,
+                lastChecked: 'Just now',
+              }
+            : v
+        )
+      );
+
+      addAlert('success', 'Docker Daemon Handshake Verified', `Verified connection to ${host.name} (${host.ip}:${host.port}) in ${latency}ms.`);
+
+      // Query real live running and stopped containers from the daemon
+      try {
+        const liveContainers = await api.getContainers(id);
+        setContainers((prev) => [
+          ...prev.filter((c) => c.vmId !== id),
+          ...liveContainers,
+        ]);
+      } catch (cErr) {
+        console.warn('Failed to query containers after ping:', cErr);
+      }
+
+      return {
+        success: true,
+        latency,
+        message: res.message || `Connected to Docker daemon on ${host.ip}:${host.port} (${latency}ms)`,
+      };
+    } catch (err: any) {
+      setVms((prev) =>
+        prev.map((v) =>
+          v.id === id ? { ...v, status: 'error', pingMs: 0, lastChecked: 'Just now' } : v
+        )
+      );
+      const msg = err.message || `Failed to connect to ${host.ip}:${host.port}`;
+      addAlert('error', 'Connection Error', msg);
+      return {
+        success: false,
+        latency: 0,
+        message: msg,
+      };
+    }
   };
 
   const startContainer = async (id: string) => {

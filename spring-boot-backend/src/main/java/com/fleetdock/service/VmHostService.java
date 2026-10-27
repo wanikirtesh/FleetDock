@@ -53,19 +53,19 @@ public class VmHostService {
                 .ip(request.getIp())
                 .port(request.getPort())
                 .authType(request.getAuthType())
-                .environment(request.getEnvironment())
-                .os(request.getOs())
-                .arch(request.getArch())
-                .dockerVersion("Docker Engine 27.2.1")
-                .apiVersion("1.47")
-                .status("online")
-                .pingMs(15)
-                .cpuCores(request.getCpuCores())
-                .memoryGb(request.getMemoryGb())
-                .diskGb(request.getDiskGb())
-                .cpuUsagePercent(24.5)
-                .memoryUsedPercent(58.0)
-                .diskUsedPercent(42.0)
+                .environment(request.getEnvironment() != null ? request.getEnvironment() : "Production")
+                .os(request.getOs() != null ? request.getOs() : "Linux")
+                .arch(request.getArch() != null ? request.getArch() : "x86_64")
+                .dockerVersion("Pending verification")
+                .apiVersion("")
+                .status("connecting")
+                .pingMs(0)
+                .cpuCores(request.getCpuCores() > 0 ? request.getCpuCores() : 1)
+                .memoryGb(request.getMemoryGb() > 0 ? request.getMemoryGb() : 1)
+                .diskGb(request.getDiskGb() > 0 ? request.getDiskGb() : 10)
+                .cpuUsagePercent(0.0)
+                .memoryUsedPercent(0.0)
+                .diskUsedPercent(0.0)
                 .authCredential(credential)
                 .createdAt(LocalDateTime.now())
                 .lastChecked(LocalDateTime.now())
@@ -83,6 +83,11 @@ public class VmHostService {
         existing.setEnvironment(request.getEnvironment());
         existing.setLastChecked(LocalDateTime.now());
         return vmHostRepository.save(existing);
+    }
+
+    @Transactional
+    public VmHost save(VmHost host) {
+        return vmHostRepository.save(host);
     }
 
     @Transactional

@@ -76,4 +76,21 @@ public class ContainerController {
             @RequestBody ContainerDeployRequest request) {
         return ResponseEntity.ok(dockerEngineService.deployContainer(vmId, request));
     }
+
+    @GetMapping("/{containerId}/inspect")
+    public ResponseEntity<Object> inspectContainer(
+            @PathVariable String vmId,
+            @PathVariable String containerId) {
+        return ResponseEntity.ok(dockerEngineService.inspectContainer(vmId, containerId));
+    }
+
+    @GetMapping("/volumes")
+    public ResponseEntity<List<Map<String, Object>>> listVolumes(@PathVariable String vmId) {
+        return ResponseEntity.ok(dockerEngineService.listVolumes(vmId));
+    }
+
+    @GetMapping("/networks")
+    public ResponseEntity<List<Map<String, Object>>> listNetworks(@PathVariable String vmId) {
+        return ResponseEntity.ok(dockerEngineService.listNetworks(vmId));
+    }
 }

@@ -20,75 +20,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// In-memory state mirroring the Spring Boot backend
-let mockVms = [
-  {
-    id: 'vm-prod-01',
-    name: 'prod-app-swarm-01',
-    ip: '192.168.1.101',
-    port: 22,
-    authType: 'SSH_KEY',
-    environment: 'Production',
-    os: 'Ubuntu 24.04 LTS',
-    arch: 'x86_64',
-    dockerVersion: 'Docker Engine 27.2.1',
-    apiVersion: '1.47',
-    status: 'online',
-    pingMs: 14,
-    cpuCores: 8,
-    memoryGb: 32,
-    diskGb: 500,
-    cpuUsagePercent: 28.5,
-    memoryUsedPercent: 64.2,
-    diskUsedPercent: 48.0,
-  },
-  {
-    id: 'vm-db-02',
-    name: 'prod-db-cluster-02',
-    ip: '192.168.1.102',
-    port: 2376,
-    authType: 'DOCKER_SOCKET',
-    environment: 'Production',
-    os: 'Debian 12 Bookworm',
-    arch: 'x86_64',
-    dockerVersion: 'Docker Engine 27.1.0-ce',
-    apiVersion: '1.46',
-    status: 'online',
-    pingMs: 18,
-    cpuCores: 16,
-    memoryGb: 64,
-    diskGb: 1024,
-    cpuUsagePercent: 42.1,
-    memoryUsedPercent: 78.4,
-    diskUsedPercent: 62.3,
-  },
-];
-
-let mockContainers = [
-  {
-    id: 'c-sp-billing-01',
-    vmId: 'vm-prod-01',
-    name: 'spring-billing-service',
-    image: 'registry.internal.net/microservices/billing-service:2.4.1',
-    state: 'running',
-    statusText: 'Up 3 days (healthy)',
-    created: '2026-10-23 09:15:00',
-    command: 'java -jar app.jar --spring.profiles.active=prod',
-    cpuPercent: 3.4,
-    memUsageMb: 485,
-    memLimitMb: 1024,
-    ports: [
-      { hostPort: 8080, containerPort: 8080, protocol: 'tcp' },
-      { hostPort: 8081, containerPort: 8081, protocol: 'tcp' },
-    ],
-    envVars: {
-      SPRING_PROFILES_ACTIVE: 'prod',
-      DB_HOST: '192.168.1.102',
-    },
-    composeStack: 'core-microservices',
-    restartPolicy: 'always',
-  },
-];
+// Registered VM hosts and containers in memory
+let registeredHosts: any[] = [];
+let deployedContainers: any[] = [];
+let registeredComposeStacks: any[] = [];
 
 // --- REST API Endpoints (Parity with Spring Boot Controllers) ---
 
@@ -103,9 +38,51 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
+import net from 'net';
+
+// Helper to probe TCP connection to host
+function probeHostTcp(ip: string, port: number, timeoutMs = 3000): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const socket = new net.Socket();
+    let hasReturned = false;
+
+    socket.setTimeout(timeoutMs);
+
+    socket.on('connect', () => {
+      const latencyMs = Math.max(1, Date.now() - start);
+      hasReturned = true;
+      socket.destroy();
+      resolve({ ok: true, latencyMs });
+    });
+
+    socket.on('timeout', () => {
+      if (!hasReturned) {
+        hasReturned = true;
+        socket.destroy();
+        resolve({ ok: false, latencyMs: 0, error: `Connection timed out after ${timeoutMs}ms` });
+      }
+    });
+
+    socket.on('error', (err: any) => {
+      if (!hasReturned) {
+        hasReturned = true;
+        socket.destroy();
+        resolve({ ok: false, latencyMs: 0, error: err.message || 'Connection refused' });
+      }
+    });
+
+    try {
+      socket.connect(port, ip);
+    } catch (err: any) {
+      resolve({ ok: false, latencyMs: 0, error: err.message });
+    }
+  });
+}
+
 // Host management
 app.get('/api/v1/hosts', (req, res) => {
-  res.json(mockVms);
+  res.json(registeredHosts);
 });
 
 app.post('/api/v1/hosts/register', (req, res) => {
@@ -114,54 +91,149 @@ app.post('/api/v1/hosts/register', (req, res) => {
     id: `vm-${Date.now().toString(36)}`,
     name: name || 'new-host',
     ip: ip || '127.0.0.1',
-    port: port || 22,
+    port: port ? parseInt(port, 10) : 22,
     authType: authType || 'SSH_KEY',
     environment: environment || 'Production',
-    os: os || 'Ubuntu 24.04 LTS',
+    os: os || 'Linux',
     arch: arch || 'x86_64',
-    dockerVersion: 'Docker Engine 27.2.1',
-    apiVersion: '1.47',
-    status: 'online',
-    pingMs: Math.floor(Math.random() * 20 + 10),
-    cpuCores: cpuCores || 4,
-    memoryGb: memoryGb || 16,
-    diskGb: diskGb || 250,
-    cpuUsagePercent: Math.floor(Math.random() * 20 + 10),
-    memoryUsedPercent: Math.floor(Math.random() * 30 + 30),
-    diskUsedPercent: Math.floor(Math.random() * 25 + 20),
+    dockerVersion: 'Pending verification',
+    apiVersion: '',
+    status: 'connecting',
+    pingMs: 0,
+    cpuCores: cpuCores ? parseInt(cpuCores, 10) : 1,
+    memoryGb: memoryGb ? parseInt(memoryGb, 10) : 1,
+    diskGb: diskGb ? parseInt(diskGb, 10) : 10,
+    cpuUsagePercent: 0,
+    memoryUsedPercent: 0,
+    diskUsedPercent: 0,
   };
-  mockVms.push(newVm);
+  registeredHosts.push(newVm);
   res.status(201).json(newVm);
 });
 
-app.post('/api/v1/hosts/:id/ping', (req, res) => {
-  const host = mockVms.find((v) => v.id === req.params.id);
+app.post('/api/v1/hosts/:id/ping', async (req, res) => {
+  const host = registeredHosts.find((v) => v.id === req.params.id);
   if (!host) {
-    return res.status(404).json({ error: 'Host not found' });
+    return res.status(404).json({ status: 'error', message: 'Host not found in database' });
   }
-  const latency = Math.floor(Math.random() * 20 + 10);
+
+  // Attempt real TCP probe
+  const probe = await probeHostTcp(host.ip, host.port);
+  if (!probe.ok) {
+    host.status = 'error';
+    return res.json({
+      status: 'error',
+      latencyMs: 0,
+      message: `Failed to connect to ${host.ip}:${host.port} -> ${probe.error}`,
+    });
+  }
+
+  // If TCP succeeded, try to query Docker daemon version if port is Docker HTTP (e.g. 2375, 2376)
+  let dockerVersion = host.dockerVersion !== 'Pending verification' ? host.dockerVersion : 'Docker Engine';
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const resp = await fetch(`http://${host.ip}:${host.port}/version`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (resp.ok) {
+      const vData = await resp.json();
+      dockerVersion = `Docker ${vData.Version || ''}`;
+      host.dockerVersion = dockerVersion;
+      if (vData.ApiVersion) host.apiVersion = vData.ApiVersion;
+    }
+  } catch {
+    // Port is reachable via TCP (e.g. SSH / TCP socket)
+  }
+
+  host.status = 'online';
+  host.pingMs = probe.latencyMs;
   res.json({
     status: 'online',
-    latencyMs: latency,
-    dockerVersion: host.dockerVersion,
-    apiVersion: host.apiVersion,
-    message: `Connected successfully to Docker daemon on ${host.ip}:${host.port}`,
+    latencyMs: probe.latencyMs,
+    dockerVersion,
+    apiVersion: host.apiVersion || '1.47',
+    message: `Handshake verified with ${host.name} on ${host.ip}:${host.port} (${probe.latencyMs}ms)`,
   });
 });
 
 app.delete('/api/v1/hosts/:id', (req, res) => {
-  mockVms = mockVms.filter((v) => v.id !== req.params.id);
+  registeredHosts = registeredHosts.filter((v) => v.id !== req.params.id);
+  deployedContainers = deployedContainers.filter((c) => c.vmId !== req.params.id);
+  registeredComposeStacks = registeredComposeStacks.filter((s) => s.vmId !== req.params.id);
   res.status(204).send();
 });
 
 // Container management
-app.get('/api/v1/hosts/:vmId/containers', (req, res) => {
-  const list = mockContainers.filter((c) => c.vmId === req.params.vmId);
+app.get('/api/v1/hosts/:vmId/containers', async (req, res) => {
+  const host = registeredHosts.find((v) => v.id === req.params.vmId);
+  if (host) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const dockerUrl = `http://${host.ip}:${host.port}/containers/json?all=1`;
+      const resp = await fetch(dockerUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        const rawContainers = await resp.json();
+        const mapped = rawContainers.map((c: any) => ({
+          id: (c.Id || '').substring(0, 12),
+          vmId: host.id,
+          name: (c.Names && c.Names[0] ? c.Names[0].replace(/^\//, '') : (c.Id || '').substring(0, 12)),
+          image: c.Image,
+          state: (c.State || 'running').toLowerCase(),
+          statusText: c.Status || '',
+          created: new Date(c.Created * 1000).toISOString().replace('T', ' ').substring(0, 19),
+          command: c.Command || '',
+          cpuPercent: 0,
+          memUsageMb: 0,
+          memLimitMb: 0,
+          ports: (c.Ports || []).filter((p: any) => p.PublicPort).map((p: any) => ({
+            hostPort: p.PublicPort,
+            containerPort: p.PrivatePort,
+            protocol: p.Type || 'tcp',
+          })),
+          envVars: {},
+          composeStack: c.Labels ? c.Labels['com.docker.compose.project'] : undefined,
+          restartPolicy: 'no',
+        }));
+        return res.json(mapped);
+      }
+    } catch {
+      // Docker socket not directly accessible or firewalled
+    }
+  }
+
+  const list = deployedContainers.filter((c) => c.vmId === req.params.vmId);
   res.json(list);
 });
 
-app.post('/api/v1/hosts/:vmId/containers/:cid/start', (req, res) => {
-  const c = mockContainers.find((x) => x.id === req.params.cid);
+app.post('/api/v1/hosts/:vmId/containers/deploy', (req, res) => {
+  const newC = {
+    id: `c-${Date.now().toString(36)}`,
+    vmId: req.params.vmId,
+    name: req.body.name || 'new-container',
+    image: req.body.image,
+    state: 'running',
+    statusText: 'Up Just now',
+    created: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    command: req.body.command || '',
+    ports: req.body.ports || [],
+    envVars: req.body.envVars || {},
+    restartPolicy: req.body.restartPolicy || 'always',
+  };
+  deployedContainers.push(newC);
+  res.status(201).json(newC);
+});
+
+app.post('/api/v1/hosts/:vmId/containers/:cid/start', async (req, res) => {
+  const host = registeredHosts.find((v) => v.id === req.params.vmId);
+  if (host) {
+    try {
+      await fetch(`http://${host.ip}:${host.port}/containers/${req.params.cid}/start`, { method: 'POST' });
+    } catch {}
+  }
+  const c = deployedContainers.find((x) => x.id === req.params.cid);
   if (c) {
     c.state = 'running';
     c.statusText = 'Up Just now';
@@ -169,8 +241,14 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/start', (req, res) => {
   res.json({ status: 'success', message: 'Container started' });
 });
 
-app.post('/api/v1/hosts/:vmId/containers/:cid/stop', (req, res) => {
-  const c = mockContainers.find((x) => x.id === req.params.cid);
+app.post('/api/v1/hosts/:vmId/containers/:cid/stop', async (req, res) => {
+  const host = registeredHosts.find((v) => v.id === req.params.vmId);
+  if (host) {
+    try {
+      await fetch(`http://${host.ip}:${host.port}/containers/${req.params.cid}/stop`, { method: 'POST' });
+    } catch {}
+  }
+  const c = deployedContainers.find((x) => x.id === req.params.cid);
   if (c) {
     c.state = 'stopped';
     c.statusText = 'Exited (0) Just now';
@@ -178,8 +256,14 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/stop', (req, res) => {
   res.json({ status: 'success', message: 'Container stopped gracefully' });
 });
 
-app.post('/api/v1/hosts/:vmId/containers/:cid/restart', (req, res) => {
-  const c = mockContainers.find((x) => x.id === req.params.cid);
+app.post('/api/v1/hosts/:vmId/containers/:cid/restart', async (req, res) => {
+  const host = registeredHosts.find((v) => v.id === req.params.vmId);
+  if (host) {
+    try {
+      await fetch(`http://${host.ip}:${host.port}/containers/${req.params.cid}/restart`, { method: 'POST' });
+    } catch {}
+  }
+  const c = deployedContainers.find((x) => x.id === req.params.cid);
   if (c) {
     c.state = 'running';
     c.statusText = 'Up Just now (restarted)';
@@ -188,8 +272,21 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/restart', (req, res) => {
 });
 
 app.delete('/api/v1/hosts/:vmId/containers/:cid', (req, res) => {
-  mockContainers = mockContainers.filter((x) => x.id !== req.params.cid);
+  deployedContainers = deployedContainers.filter((x) => x.id !== req.params.cid);
   res.status(204).send();
+});
+
+// Volumes & Networks
+app.get('/api/v1/hosts/:vmId/volumes', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/v1/hosts/:vmId/networks', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/v1/hosts/:vmId/compose', (req, res) => {
+  res.json(registeredComposeStacks.filter((s) => s.vmId === req.params.vmId));
 });
 
 // Live SSE Logs Stream

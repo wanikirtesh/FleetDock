@@ -50,6 +50,16 @@ public class VmHostController {
         return ResponseEntity.ok(dockerEngineService.testConnection(id));
     }
 
+    @GetMapping("/{id}/volumes")
+    public ResponseEntity<List<Map<String, Object>>> getHostVolumes(@PathVariable String id) {
+        return ResponseEntity.ok(dockerEngineService.listVolumes(id));
+    }
+
+    @GetMapping("/{id}/networks")
+    public ResponseEntity<List<Map<String, Object>>> getHostNetworks(@PathVariable String id) {
+        return ResponseEntity.ok(dockerEngineService.listNetworks(id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteHost(@PathVariable String id) {
         vmHostService.deleteHost(id);

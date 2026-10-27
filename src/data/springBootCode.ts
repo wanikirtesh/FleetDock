@@ -291,89 +291,339 @@ public class DockerEngineService {
         VmHost host = vmHostService.getHostById(vmId);
         long start = System.currentTimeMillis();
         try {
-            long latency = Math.max(8, System.currentTimeMillis() - start + 12);
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            client.pingCmd().exec();
+            long latency = Math.max(1, System.currentTimeMillis() - start);
+            Info info = client.infoCmd().exec();
+
+            host.setStatus("online");
+            host.setPingMs((int) latency);
+            if (info.getServerVersion() != null) host.setDockerVersion("Docker " + info.getServerVersion());
+            if (info.getNCPU() != null) host.setCpuCores(info.getNCPU());
+            if (info.getMemTotal() != null) host.setMemoryGb((int) (info.getMemTotal() / (1024 * 1024 * 1024)));
+            if (info.getOperatingSystem() != null) host.setOs(info.getOperatingSystem());
+            if (info.getArchitecture() != null) host.setArch(info.getArchitecture());
+            vmHostService.save(host);
+
             return Map.of(
                     "status", "online",
                     "latencyMs", latency,
-                    "dockerVersion", "27.2.1",
-                    "apiVersion", "1.47",
-                    "message", "Handshake succeeded over " + host.getAuthType()
+                    "dockerVersion", info.getServerVersion() != null ? info.getServerVersion() : "27.2.1",
+                    "containersTotal", info.getContainers() != null ? info.getContainers() : 0,
+                    "containersRunning", info.getContainersRunning() != null ? info.getContainersRunning() : 0,
+                    "containersStopped", info.getContainersStopped() != null ? info.getContainersStopped() : 0,
+                    "os", info.getOperatingSystem() != null ? info.getOperatingSystem() : host.getOs()
             );
         } catch (Exception e) {
-            log.warn("Docker ping failed for host: {}", host.getName(), e);
-            return Map.of(
-                    "status", "error",
-                    "message", "Connection failed: " + e.getMessage()
-            );
+            log.warn("Docker ping failed for host: {} -> {}", host.getName(), e.getMessage());
+            host.setStatus("error");
+            vmHostService.save(host);
+            return Map.of("status", "error", "message", "Connection failed: " + e.getMessage());
         }
     }
 
     public List<ContainerDto> listContainers(String vmId, String filter) {
         VmHost host = vmHostService.getHostById(vmId);
-        return List.of(
-            ContainerDto.builder()
-                .id("c-" + vmId.substring(0, 4) + "-01")
-                .vmId(vmId)
-                .name("spring-billing-service")
-                .image("registry.internal.net/microservices/billing-service:2.4.1")
-                .state("running")
-                .statusText("Up 3 days")
-                .created("2026-10-23 09:15:00")
-                .command("java -jar app.jar")
-                .cpuPercent(3.4)
-                .memUsageMb(485)
-                .memLimitMb(1024)
-                .ports(List.of(new ContainerDto.PortMapping(8080, 8080, "tcp")))
-                .restartPolicy("always")
-                .build()
-        );
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            ListContainersCmd cmd = client.listContainersCmd().withShowAll(true);
+            if ("running".equalsIgnoreCase(filter)) {
+                cmd.withStatusFilter(Collections.singletonList("running"));
+            } else if ("stopped".equalsIgnoreCase(filter) || "exited".equalsIgnoreCase(filter)) {
+                cmd.withStatusFilter(Collections.singletonList("exited"));
+            }
+
+            List<Container> dockerContainers = cmd.exec();
+            return dockerContainers.stream().map(c -> {
+                String name = (c.getNames() != null && c.getNames().length > 0)
+                        ? c.getNames()[0].replaceFirst("^/", "")
+                        : c.getId().substring(0, Math.min(12, c.getId().length()));
+
+                List<ContainerDto.PortMapping> ports = new ArrayList<>();
+                if (c.getPorts() != null) {
+                    for (ContainerPort p : c.getPorts()) {
+                        if (p.getPublicPort() != null) {
+                            ports.add(new ContainerDto.PortMapping(
+                                    p.getPublicPort(),
+                                    p.getPrivatePort() != null ? p.getPrivatePort() : 0,
+                                    p.getType() != null ? p.getType() : "tcp"
+                            ));
+                        }
+                    }
+                }
+                String state = c.getState() != null ? c.getState().toLowerCase() : "stopped";
+                String composeProject = c.getLabels() != null ? c.getLabels().get("com.docker.compose.project") : null;
+
+                return ContainerDto.builder()
+                        .id(c.getId().substring(0, Math.min(12, c.getId().length())))
+                        .vmId(vmId)
+                        .name(name)
+                        .image(c.getImage())
+                        .state(state)
+                        .statusText(c.getStatus() != null ? c.getStatus() : state)
+                        .created(Instant.ofEpochSecond(c.getCreated()).toString())
+                        .command(c.getCommand() != null ? c.getCommand() : "")
+                        .ports(ports)
+                        .composeStack(composeProject)
+                        .build();
+            }).collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Failed to query live containers from Docker host {}: {}", host.getName(), e.getMessage());
+            throw new RuntimeException("Docker daemon connection failed: " + e.getMessage(), e);
+        }
     }
 
     public void startContainer(String vmId, String containerId) {
-        log.info("Starting container {} on host {}", containerId, vmId);
+        VmHost host = vmHostService.getHostById(vmId);
+        dockerClientFactory.getClientForHost(host).startContainerCmd(containerId).exec();
     }
 
     public void stopContainer(String vmId, String containerId, int timeoutSeconds) {
-        log.info("Stopping container {} on host {}", containerId, vmId);
+        VmHost host = vmHostService.getHostById(vmId);
+        dockerClientFactory.getClientForHost(host).stopContainerCmd(containerId).withTimeout(timeoutSeconds).exec();
     }
 
     public void restartContainer(String vmId, String containerId) {
-        log.info("Restarting container {} on host {}", containerId, vmId);
+        VmHost host = vmHostService.getHostById(vmId);
+        dockerClientFactory.getClientForHost(host).restartContainerCmd(containerId).exec();
     }
 
     public void removeContainer(String vmId, String containerId, boolean force) {
-        log.info("Removing container {} on host {}", containerId, vmId);
+        VmHost host = vmHostService.getHostById(vmId);
+        dockerClientFactory.getClientForHost(host).removeContainerCmd(containerId).withForce(force).exec();
     }
 
     public ContainerDto deployContainer(String vmId, ContainerDeployRequest request) {
+        VmHost host = vmHostService.getHostById(vmId);
+        DockerClient client = dockerClientFactory.getClientForHost(host);
+
+        try {
+            client.pullImageCmd(request.getImage())
+                    .exec(new PullImageResultCallback())
+                    .awaitCompletion(90, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Image pull notice: {}", e.getMessage());
+        }
+
+        Ports portBindings = new Ports();
+        List<ExposedPort> exposedPorts = new ArrayList<>();
+        if (request.getPorts() != null) {
+            for (ContainerDto.PortMapping pm : request.getPorts()) {
+                ExposedPort ep = ExposedPort.tcp(pm.getContainerPort());
+                exposedPorts.add(ep);
+                portBindings.bind(ep, Ports.Binding.bindPort(pm.getHostPort()));
+            }
+        }
+
+        HostConfig hostConfig = HostConfig.newHostConfig()
+                .withPortBindings(portBindings)
+                .withRestartPolicy(RestartPolicy.parse(request.getRestartPolicy()));
+
+        if (request.getMemLimitMb() > 0) {
+            hostConfig.withMemory(request.getMemLimitMb() * 1024 * 1024);
+        }
+
+        List<String> envList = new ArrayList<>();
+        if (request.getEnvVars() != null) {
+            request.getEnvVars().forEach((k, v) -> envList.add(k + "=" + v));
+        }
+
+        CreateContainerCmd createCmd = client.createContainerCmd(request.getImage())
+                .withName(request.getName())
+                .withHostConfig(hostConfig)
+                .withExposedPorts(exposedPorts)
+                .withEnv(envList);
+
+        if (request.getCommand() != null && !request.getCommand().isBlank()) {
+            createCmd.withCmd(request.getCommand().split(" "));
+        }
+
+        CreateContainerResponse resp = createCmd.exec();
+        String newId = resp.getId();
+        client.startContainerCmd(newId).exec();
+
         return ContainerDto.builder()
-                .id("c-" + UUID.randomUUID().toString().substring(0, 8))
+                .id(newId.substring(0, Math.min(12, newId.length())))
                 .vmId(vmId)
                 .name(request.getName())
                 .image(request.getImage())
                 .state("running")
                 .statusText("Up Just now")
                 .created(Instant.now().toString())
-                .command(request.getCommand() != null ? request.getCommand() : "docker-entrypoint.sh")
+                .ports(request.getPorts())
+                .envVars(request.getEnvVars())
+                .restartPolicy(request.getRestartPolicy())
                 .build();
     }
 
+    public List<Map<String, Object>> listVolumes(String vmId) {
+        VmHost host = vmHostService.getHostById(vmId);
+        DockerClient client = dockerClientFactory.getClientForHost(host);
+        ListVolumesResponse resp = client.listVolumesCmd().exec();
+        if (resp.getVolumes() == null) return Collections.emptyList();
+
+        return resp.getVolumes().stream().map(v -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("name", v.getName());
+            map.put("driver", v.getDriver());
+            map.put("scope", v.getScope() != null ? v.getScope() : "local");
+            return map;
+        }).collect(Collectors.toList());
+    }
+
+    public List<Map<String, Object>> listNetworks(String vmId) {
+        VmHost host = vmHostService.getHostById(vmId);
+        DockerClient client = dockerClientFactory.getClientForHost(host);
+        List<Network> networks = client.listNetworksCmd().exec();
+        if (networks == null) return Collections.emptyList();
+
+        return networks.stream().map(n -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", n.getId().substring(0, Math.min(12, n.getId().length())));
+            map.put("name", n.getName());
+            map.put("driver", n.getDriver());
+            return map;
+        }).collect(Collectors.toList());
+    }
+
     public SseEmitter streamLogs(String vmId, String containerId, int tail, boolean follow) {
+        VmHost host = vmHostService.getHostById(vmId);
         SseEmitter emitter = new SseEmitter(180_000L);
-        Executors.newSingleThreadExecutor().submit(() -> {
-            try {
-                for (int i = 0; i < 20; i++) {
-                    String logLine = String.format("[%s] [INFO] [container=%s] Spring Boot heartbeat probe OK", 
-                            Instant.now().toString().substring(11, 19), containerId);
-                    emitter.send(SseEmitter.event().data(logLine));
-                    Thread.sleep(1500);
-                }
-                emitter.complete();
-            } catch (Exception e) {
-                emitter.completeWithError(e);
-            }
-        });
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            client.logContainerCmd(containerId)
+                    .withStdOut(true)
+                    .withStdErr(true)
+                    .withFollowStream(follow)
+                    .withTail(tail)
+                    .withTimestamps(true)
+                    .exec(new ResultCallback<Frame>() {
+                        @Override public void onStart(Closeable closeable) {}
+                        @Override public void onNext(Frame frame) {
+                            try {
+                                String line = new String(frame.getPayload(), StandardCharsets.UTF_8).trim();
+                                if (!line.isEmpty()) emitter.send(SseEmitter.event().data(line));
+                            } catch (Exception ex) {}
+                        }
+                        @Override public void onError(Throwable t) { emitter.completeWithError(t); }
+                        @Override public void onComplete() { emitter.complete(); }
+                        @Override public void close() {}
+                    });
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
         return emitter;
+    }
+}
+`,
+  },
+  {
+    filename: 'ComposeService.java',
+    path: 'src/main/java/com/fleetdock/service/ComposeService.java',
+    language: 'java',
+    description: 'Auto-discovers real compose projects from live Docker daemon container labels (com.docker.compose.project) and executes stack up/down commands',
+    content: `package com.fleetdock.service;
+
+import com.fleetdock.config.DockerClientFactory;
+import com.fleetdock.entity.ComposeStackEntity;
+import com.fleetdock.entity.VmHost;
+import com.fleetdock.repository.ComposeStackRepository;
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.model.Container;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ComposeService {
+
+    private final ComposeStackRepository composeStackRepository;
+    private final VmHostService vmHostService;
+    private final DockerClientFactory dockerClientFactory;
+
+    @Transactional
+    public List<ComposeStackEntity> listStacks(String vmId) {
+        VmHost host = vmHostService.getHostById(vmId);
+        List<ComposeStackEntity> dbStacks = composeStackRepository.findByVmId(vmId);
+        Map<String, ComposeStackEntity> stackMap = new HashMap<>();
+
+        for (ComposeStackEntity s : dbStacks) {
+            stackMap.put(s.getName(), s);
+        }
+
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            List<Container> containers = client.listContainersCmd().withShowAll(true).exec();
+
+            Map<String, List<Container>> projectGroups = new HashMap<>();
+            for (Container c : containers) {
+                if (c.getLabels() != null && c.getLabels().containsKey("com.docker.compose.project")) {
+                    String projectName = c.getLabels().get("com.docker.compose.project");
+                    projectGroups.computeIfAbsent(projectName, k -> new ArrayList<>()).add(c);
+                }
+            }
+
+            for (Map.Entry<String, List<Container>> entry : projectGroups.entrySet()) {
+                String projectName = entry.getKey();
+                List<Container> projectContainers = entry.getValue();
+                int total = projectContainers.size();
+                int running = (int) projectContainers.stream().filter(c -> "running".equalsIgnoreCase(c.getState())).count();
+                String status = running == total ? "running" : (running > 0 ? "partially_running" : "stopped");
+
+                ComposeStackEntity stack = stackMap.get(projectName);
+                if (stack == null) {
+                    stack = ComposeStackEntity.builder()
+                            .id("stack-" + UUID.randomUUID().toString().substring(0, 8))
+                            .vmId(vmId)
+                            .name(projectName)
+                            .status(status)
+                            .serviceCount(total)
+                            .runningCount(running)
+                            .rawYaml("# Discovered from live containers on " + host.getName())
+                            .lastDeployed(LocalDateTime.now())
+                            .build();
+                    composeStackRepository.save(stack);
+                    stackMap.put(projectName, stack);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not query live compose labels: {}", e.getMessage());
+        }
+
+        return new ArrayList<>(stackMap.values());
+    }
+
+    public Map<String, Object> executeComposeUp(String vmId, String stackId, boolean detach) {
+        VmHost host = vmHostService.getHostById(vmId);
+        ComposeStackEntity stack = composeStackRepository.findById(stackId).orElseThrow();
+        DockerClient client = dockerClientFactory.getClientForHost(host);
+        List<Container> containers = client.listContainersCmd().withShowAll(true).exec();
+        for (Container c : containers) {
+            if (c.getLabels() != null && stack.getName().equals(c.getLabels().get("com.docker.compose.project"))) {
+                if (!"running".equalsIgnoreCase(c.getState())) client.startContainerCmd(c.getId()).exec();
+            }
+        }
+        return Map.of("status", "success", "message", "Started stack " + stack.getName());
+    }
+
+    public Map<String, Object> executeComposeDown(String vmId, String stackId) {
+        VmHost host = vmHostService.getHostById(vmId);
+        ComposeStackEntity stack = composeStackRepository.findById(stackId).orElseThrow();
+        DockerClient client = dockerClientFactory.getClientForHost(host);
+        List<Container> containers = client.listContainersCmd().withShowAll(true).exec();
+        for (Container c : containers) {
+            if (c.getLabels() != null && stack.getName().equals(c.getLabels().get("com.docker.compose.project"))) {
+                if ("running".equalsIgnoreCase(c.getState())) client.stopContainerCmd(c.getId()).withTimeout(10).exec();
+            }
+        }
+        return Map.of("status", "success", "message", "Stopped stack " + stack.getName());
     }
 }
 `,

@@ -149,4 +149,22 @@ export const api = {
     if (!res.ok) throw new Error(`Deploy failed: ${res.status}`);
     return res.json();
   },
+
+  getVolumes: async (vmId: string): Promise<any[]> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/volumes`));
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  getNetworks: async (vmId: string): Promise<any[]> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/networks`));
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  getComposeStacks: async (vmId: string): Promise<any[]> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/compose`));
+    if (!res.ok) return [];
+    return res.json();
+  },
 };

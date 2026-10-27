@@ -39,7 +39,9 @@ export const ContainerList: React.FC = () => {
     setSelectedContainerForLogs,
     setSelectedContainerForShell,
     setSelectedContainerForInspect,
-    setIsDeployModalOpen
+    setIsDeployModalOpen,
+    fetchFromBackend,
+    isSyncing
   } = useFleet();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -195,6 +197,17 @@ export const ContainerList: React.FC = () => {
               Paused ({containers.filter((c) => c.state === 'paused').length})
             </button>
           </div>
+
+          {/* Refresh from VM Button */}
+          <button
+            onClick={() => fetchFromBackend()}
+            disabled={isSyncing}
+            title="Query remote VM Docker daemon for live container states"
+            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-cyan-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Fetching...' : 'Query VM Daemon'}</span>
+          </button>
 
           {/* Deploy Container Button */}
           <button
