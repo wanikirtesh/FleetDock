@@ -98,3 +98,39 @@ export function generateSingleLog(containerName: string): LogEntry {
     containerId: containerName,
   };
 }
+
+export function parseRawDockerLogLine(rawLine: string, containerId: string): LogEntry {
+  const trimmed = rawLine.trim();
+  const id = `log-${containerId}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+  // Docker logs formatted with timestamps start with ISO-8601 string, e.g. 2026-10-27T08:30:00.123456789Z
+  const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\s+(.*)$/);
+
+  let timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  let content = trimmed;
+
+  if (isoMatch) {
+    timestamp = isoMatch[1].replace('T', ' ').substring(0, 19);
+    content = isoMatch[2];
+  }
+
+  // Detect log level
+  let level: LogEntry['level'] = 'INFO';
+  if (/\[error\]|\berror\b|\bfatal\b|\bexception\b|\berr\b|\bfailed\b/i.test(content)) {
+    level = 'ERROR';
+  } else if (/\[warn\]|\bwarn\b|\bwarning\b/i.test(content)) {
+    level = 'WARN';
+  } else if (/\[debug\]|\bdebug\b|\btrace\b/i.test(content)) {
+    level = 'DEBUG';
+  } else if (/\[system\]|systemd/i.test(content)) {
+    level = 'SYSTEM';
+  }
+
+  return {
+    id,
+    timestamp,
+    level,
+    message: trimmed,
+    containerId,
+  };
+}

@@ -4,30 +4,36 @@ import {
   Terminal, 
   CornerDownLeft, 
   Trash2, 
-  Play, 
-  HelpCircle,
   Copy,
-  Check
+  Check,
+  Server,
+  RotateCw,
+  AlertCircle
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { api } from '../../services/api';
 
 interface TerminalLine {
   id: string;
   type: 'command' | 'output' | 'error' | 'system';
   text: string;
+  exitCode?: number;
 }
 
 export const ContainerShellModal: React.FC = () => {
-  const { selectedContainerForShell, setSelectedContainerForShell } = useFleet();
+  const { selectedContainerForShell, setSelectedContainerForShell, vms } = useFleet();
 
   const [inputVal, setInputVal] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [copied, setCopied] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const targetVm = vms.find((v) => v.id === selectedContainerForShell?.vmId);
 
   // Initialize terminal session
   useEffect(() => {
@@ -36,25 +42,25 @@ export const ContainerShellModal: React.FC = () => {
         {
           id: 'sys-1',
           type: 'system',
-          text: `Connected to Docker daemon on target VM. Attached /bin/sh to ${selectedContainerForShell.name} (${selectedContainerForShell.id})`,
+          text: `Interactive Exec Session established with container ${selectedContainerForShell.name} (${selectedContainerForShell.id})`,
         },
         {
           id: 'sys-2',
           type: 'system',
-          text: `Linux ${selectedContainerForShell.name} 6.6.137-linuxkit #1 SMP PREEMPT_DYNAMIC aarch64`,
+          text: `Target Host: ${targetVm?.name || 'VM'} (${targetVm?.ip || '127.0.0.1'}) • Engine: ${targetVm?.dockerVersion || 'Docker Engine'}`,
         },
         {
           id: 'sys-3',
           type: 'output',
-          text: `Type 'help' for available diagnostic commands or test 'env', 'ps aux', 'df -h', 'actuator/health'.`,
+          text: `Connected to /bin/sh. Run any diagnostic command (e.g., 'ps aux', 'env', 'df -h', 'ls -la', 'netstat -tlpn').`,
         },
       ]);
     }
-  }, [selectedContainerForShell]);
+  }, [selectedContainerForShell, targetVm]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines]);
+  }, [lines, isExecuting]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -66,125 +72,71 @@ export const ContainerShellModal: React.FC = () => {
     'ps aux',
     'env',
     'df -h',
-    'top -b -n 1',
-    'curl -I localhost:8080/health',
+    'ls -la',
     'cat /etc/os-release',
     'netstat -tlpn',
+    'uptime',
+    'ip a',
+    'uname -a',
+    'id',
   ];
 
-  const executeCommand = (cmd: string) => {
+  const executeCommand = async (cmd: string) => {
     const trimmed = cmd.trim();
-    if (!trimmed) return;
+    if (!trimmed || isExecuting) return;
 
-    // Add to history
+    // Local clear command
+    if (trimmed.toLowerCase() === 'clear') {
+      setLines([]);
+      setInputVal('');
+      return;
+    }
+
+    // Add to command history
     setHistory((prev) => [...prev, trimmed]);
     setHistoryIdx(-1);
+    setInputVal('');
 
+    const cmdLineId = `cmd-${Date.now()}`;
     const cmdLine: TerminalLine = {
-      id: `cmd-${Date.now()}`,
+      id: cmdLineId,
       type: 'command',
       text: `root@${selectedContainerForShell.name}:/# ${trimmed}`,
     };
 
-    let responseText = '';
-    let responseType: TerminalLine['type'] = 'output';
+    setLines((prev) => [...prev, cmdLine]);
+    setIsExecuting(true);
 
-    const lower = trimmed.toLowerCase();
+    try {
+      const res = await api.execCommand(
+        selectedContainerForShell.vmId,
+        selectedContainerForShell.id,
+        trimmed
+      );
 
-    if (lower === 'help') {
-      responseText = `Available diagnostic commands:
-  - ps aux          : Display running processes and PIDs
-  - env             : Inspect runtime container environment variables
-  - df -h           : Show disk mount capacity and storage usage
-  - top -b -n 1     : Snapshot CPU and Memory utilization per process
-  - cat /etc/os-release : Display base OS distribution information
-  - netstat -tlpn   : List active listening TCP/UDP sockets and ports
-  - curl -I localhost:8080/health : Probe internal HTTP endpoints
-  - clear           : Wipe terminal screen
-  - uptime          : Display container uptime and load average`;
-    } else if (lower === 'clear') {
-      setLines([]);
-      setInputVal('');
-      return;
-    } else if (lower === 'env') {
-      const entries = Object.entries(selectedContainerForShell.envVars);
-      if (entries.length === 0) {
-        responseText = `HOSTNAME=${selectedContainerForShell.name}
-SHLVL=1
-HOME=/root
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-TERM=xterm-256color`;
-      } else {
-        responseText = entries.map(([k, v]) => `${k}=${v}`).join('\n') + `\nHOSTNAME=${selectedContainerForShell.name}\nPATH=/usr/local/bin:/usr/bin:/bin`;
-      }
-    } else if (lower.startsWith('ps')) {
-      if (selectedContainerForShell.image.includes('spring') || selectedContainerForShell.name.includes('billing')) {
-        responseText = `USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-root           1  3.4 15.2 3824912 496640 ?      Ssl  10:00   4:21 java -jar /app/application.jar --spring.profiles.active=prod
-root          42  0.0  0.1   4120  1820 pts/0    Ss+  10:05   0:00 /bin/sh
-root          98  0.0  0.0   6200  1240 pts/0    R+   10:45   0:00 ps aux`;
-      } else if (selectedContainerForShell.image.includes('postgres')) {
-        responseText = `USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-postgres       1 14.2 27.8 8940120 914020 ?      Ssl  Oct07  48:12 postgres -D /var/lib/postgresql/data
-postgres      24  0.1  0.2 120400  4120 ?        Ss   Oct07   0:15 postgres: checkpointer
-postgres      25  0.2  0.5 124500  8410 ?        Ss   Oct07   1:12 postgres: background writer
-postgres      26  0.1  0.3 121000  4900 ?        Ss   Oct07   0:40 postgres: walwriter
-postgres      27  0.4  0.8 128000 12400 ?        Ss   Oct07   2:19 postgres: autovacuum launcher`;
-      } else {
-        responseText = `USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-root           1  0.9  1.2  24120 18400 ?        Ss   10:00   0:12 ${selectedContainerForShell.command}
-root          55  0.0  0.1   4812  2100 pts/0    R+   10:45   0:00 ps aux`;
-      }
-    } else if (lower.startsWith('df')) {
-      responseText = `Filesystem     1K-blocks      Used Available Use% Mounted on
-overlay         61255492  12480120  45638144  22% /
-tmpfs              65536         0     65536   0% /dev
-shm                65536         0     65536   0% /dev/shm
-/dev/vda1       61255492  12480120  45638144  22% /etc/hosts`;
-    } else if (lower.startsWith('cat /etc/os-release')) {
-      responseText = `NAME="Alpine Linux"
-ID=alpine
-VERSION_ID=3.20.2
-PRETTY_NAME="Alpine Linux v3.20"
-HOME_URL="https://alpinelinux.org/"
-BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"`;
-    } else if (lower.includes('curl') || lower.includes('health')) {
-      responseText = `HTTP/1.1 200 OK
-Content-Type: application/vnd.spring-boot.actuator.v3+json
-Transfer-Encoding: chunked
-Date: ${new Date().toUTCString()}
-
-{"status":"UP","components":{"diskSpace":{"status":"UP","details":{"total":53687091200,"free":41875456000,"threshold":10485760}},"ping":{"status":"UP"}}}`;
-    } else if (lower.startsWith('uptime')) {
-      responseText = ` 10:45:12 up 14 days, 3:28, 0 users, load average: 0.24, 0.18, 0.15`;
-    } else if (lower.startsWith('top')) {
-      responseText = `Mem: 485120K used, 538880K free, 31200K shrd, 24100K buff, 184500K cached
-CPU:   2.8% usr   1.2% sys   0.0% nic  95.8% idle   0.2% io   0.0% irq   0.0% sirq
-Load average: 0.21 0.17 0.14 2/84 102
-  PID  PPID USER     STAT   VSZ %VSZ CPU %CPU COMMAND
-    1     0 root     S     3.6g  72%   0  3.4% java -jar app.jar
-   42     1 root     S     4120   1%   1  0.0% /bin/sh`;
-    } else if (lower.startsWith('netstat')) {
-      responseText = `Active Internet connections (only servers)
-Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-tcp        0      0 0.0.0.0:${selectedContainerForShell.ports[0]?.containerPort || 8080}       0.0.0.0:*               LISTEN      1/java
-tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 8080}          :::*                    LISTEN      1/java`;
-    } else {
-      responseText = `Executing: ${trimmed}
-[exit code: 0] Done.`;
+      setLines((prev) => [
+        ...prev,
+        {
+          id: `out-${Date.now()}`,
+          type: res.exitCode === 0 ? 'output' : 'error',
+          text: res.output || '[Command exited with 0 and no output]',
+          exitCode: res.exitCode,
+        },
+      ]);
+    } catch (err: any) {
+      setLines((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          type: 'error',
+          text: `Failed to execute in container: ${err.message || 'Connection failed'}`,
+          exitCode: 1,
+        },
+      ]);
+    } finally {
+      setIsExecuting(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
-
-    setLines((prev) => [
-      ...prev,
-      cmdLine,
-      {
-        id: `out-${Date.now()}`,
-        type: responseType,
-        text: responseText,
-      },
-    ]);
-
-    setInputVal('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -212,9 +164,16 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
     }
   };
 
+  const handleCopyOutput = () => {
+    const fullText = lines.map((l) => l.text).join('\n');
+    navigator.clipboard.writeText(fullText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl h-[82vh] flex flex-col shadow-2xl overflow-hidden">
         
         {/* Header */}
         <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
@@ -223,21 +182,34 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
               <Terminal className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-sm text-slate-100 font-mono">
                   {selectedContainerForShell.name}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/30">
-                  TTY Exec Session Active
+                  Interactive Exec Attached
                 </span>
+                {targetVm && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700 flex items-center gap-1">
+                    <Server className="w-2.5 h-2.5" />
+                    <span>{targetVm.name} ({targetVm.ip})</span>
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-400 font-mono">
-                Shell: /bin/sh • TTY: pts/0 • User: root
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Container ID: {selectedContainerForShell.id} • Shell: /bin/sh • User: root
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyOutput}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+              title="Copy session output"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
             <button
               onClick={() => setLines([])}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
@@ -256,12 +228,13 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
 
         {/* Quick Diagnostics Bar */}
         <div className="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center gap-2 overflow-x-auto text-xs">
-          <span className="text-slate-500 text-[11px] font-mono shrink-0">Quick Commands:</span>
+          <span className="text-slate-500 text-[11px] font-mono shrink-0">Quick Run:</span>
           {quickCommands.map((qc) => (
             <button
               key={qc}
               onClick={() => executeCommand(qc)}
-              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-750 text-cyan-300 font-mono text-[11px] border border-slate-700 shrink-0 transition-colors"
+              disabled={isExecuting}
+              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-750 text-cyan-300 font-mono text-[11px] border border-slate-700 shrink-0 transition-colors disabled:opacity-50"
             >
               {qc}
             </button>
@@ -283,7 +256,14 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
             }
             if (line.type === 'command') {
               return (
-                <div key={line.id} className="text-emerald-400 font-bold">
+                <div key={line.id} className="text-emerald-400 font-bold mt-2">
+                  {line.text}
+                </div>
+              );
+            }
+            if (line.type === 'error') {
+              return (
+                <div key={line.id} className="whitespace-pre-wrap text-rose-400 pl-2 border-l border-rose-800/80 bg-rose-950/20 py-1">
                   {line.text}
                 </div>
               );
@@ -294,6 +274,14 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
               </div>
             );
           })}
+
+          {isExecuting && (
+            <div className="flex items-center gap-2 text-cyan-400 text-[11px] pt-1">
+              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Executing command inside container namespace...</span>
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
 
@@ -308,16 +296,17 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type container command..."
-            className="flex-1 bg-transparent text-slate-100 focus:outline-none placeholder-slate-600"
+            disabled={isExecuting}
+            placeholder={isExecuting ? "Executing command..." : "Type container command (e.g., ls -la, ps aux, cat /etc/hosts)..."}
+            className="flex-1 bg-transparent text-slate-100 focus:outline-none placeholder-slate-600 disabled:opacity-50"
           />
           <button
             onClick={() => executeCommand(inputVal)}
-            disabled={!inputVal.trim()}
+            disabled={!inputVal.trim() || isExecuting}
             className="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 text-white text-xs flex items-center gap-1 transition-colors"
           >
-            <CornerDownLeft className="w-3.5 h-3.5" />
-            <span>Send</span>
+            {isExecuting ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <CornerDownLeft className="w-3.5 h-3.5" />}
+            <span>{isExecuting ? 'Running' : 'Send'}</span>
           </button>
         </div>
 
@@ -325,3 +314,4 @@ tcp        0      0 :::${selectedContainerForShell.ports[0]?.containerPort || 80
     </div>
   );
 };
+

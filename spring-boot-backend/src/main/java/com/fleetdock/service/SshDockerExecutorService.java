@@ -181,13 +181,17 @@ public class SshDockerExecutorService {
             }
 
             int exitStatus = channel.getExitStatus();
-            if (exitStatus != 0 && stdout.length() == 0) {
+            String combined = stdout.length() > 0 
+                    ? (stderr.length() > 0 ? stdout.toString() + "\n" + stderr.toString() : stdout.toString())
+                    : stderr.toString();
+
+            if (exitStatus != 0 && combined.trim().isEmpty()) {
                 String errorMsg = stderr.toString().trim();
                 if (errorMsg.isEmpty()) errorMsg = "Exit code " + exitStatus;
                 throw new RuntimeException("Docker command failed over SSH (" + fullCommand + "): " + errorMsg);
             }
 
-            return stdout.toString().trim();
+            return combined.trim();
 
         } finally {
             if (channel != null && channel.isConnected()) {
@@ -437,9 +441,32 @@ public class SshDockerExecutorService {
 
     public String getLogs(VmHost host, String containerId, int tail) {
         try {
-            return executeCommandWithFallback(host, "logs --tail " + tail + " --timestamps " + containerId);
+            return executeCommandWithFallback(host, "logs --tail " + tail + " --timestamps " + containerId + " 2>&1");
         } catch (Exception e) {
-            return "Failed to fetch logs: " + e.getMessage();
+            return "[ERROR] Failed to fetch logs from Docker daemon: " + e.getMessage();
+        }
+    }
+
+    public Map<String, Object> execCommand(VmHost host, String containerId, String command) {
+        try {
+            String escaped = command.replace("\\", "\\\\").replace("\"", "\\\"");
+            String cmd = "exec " + containerId + " sh -c \"" + escaped + "\" 2>&1";
+            String output;
+            int exitCode = 0;
+            try {
+                output = executeCommandWithFallback(host, cmd);
+            } catch (Exception cmdEx) {
+                try {
+                    output = executeCommandWithFallback(host, "exec " + containerId + " " + command + " 2>&1");
+                } catch (Exception directEx) {
+                    output = directEx.getMessage();
+                    exitCode = 1;
+                }
+            }
+            return Map.of("output", output, "exitCode", exitCode);
+        } catch (Exception e) {
+            log.error("SSH Docker exec failed on {} for container {}: {}", host.getIp(), containerId, e.getMessage());
+            return Map.of("output", "Execution error: " + e.getMessage(), "exitCode", 1);
         }
     }
 

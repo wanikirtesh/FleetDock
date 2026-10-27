@@ -208,6 +208,42 @@ export const api = {
     return res.json();
   },
 
+  getContainerLogs: async (vmId: string, containerId: string, tail: number = 100): Promise<string[]> => {
+    const url = buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/logs?tail=${tail}&follow=false`);
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json, text/plain, */*' },
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: Failed to fetch logs from Docker daemon`);
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+      if (data.logs && Array.isArray(data.logs)) return data.logs;
+      return [JSON.stringify(data)];
+    } else {
+      const text = await res.text();
+      return text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    }
+  },
+
+  getContainerLogsStreamUrl: (vmId: string, containerId: string, tail: number = 100): string => {
+    return buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/logs?tail=${tail}&follow=true`);
+  },
+
+  execCommand: async (vmId: string, containerId: string, command: string): Promise<{ output: string; exitCode: number }> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/exec`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    });
+    if (!res.ok) {
+      throw new Error(`Execution request failed (HTTP ${res.status})`);
+    }
+    return res.json();
+  },
+
   getVolumes: async (vmId: string): Promise<any[]> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/volumes`));
     if (!res.ok) return [];

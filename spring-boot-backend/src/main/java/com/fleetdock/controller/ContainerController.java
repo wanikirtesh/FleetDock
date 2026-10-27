@@ -61,13 +61,17 @@ public class ContainerController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping(value = "/{containerId}/logs", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamContainerLogs(
+    @GetMapping(value = "/{containerId}/logs")
+    public Object getContainerLogs(
             @PathVariable String vmId,
             @PathVariable String containerId,
             @RequestParam(defaultValue = "100") int tail,
-            @RequestParam(defaultValue = "true") boolean follow) {
-        return dockerEngineService.streamLogs(vmId, containerId, tail, follow);
+            @RequestParam(defaultValue = "false") boolean follow,
+            @RequestHeader(value = "Accept", defaultValue = "*/*") String acceptHeader) {
+        if ((acceptHeader != null && acceptHeader.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) || follow) {
+            return dockerEngineService.streamLogs(vmId, containerId, tail, follow);
+        }
+        return ResponseEntity.ok(dockerEngineService.getLogsList(vmId, containerId, tail));
     }
 
     @PostMapping("/deploy")
@@ -82,6 +86,18 @@ public class ContainerController {
             @PathVariable String vmId,
             @PathVariable String containerId) {
         return ResponseEntity.ok(dockerEngineService.inspectContainer(vmId, containerId));
+    }
+
+    @PostMapping("/{containerId}/exec")
+    public ResponseEntity<Map<String, Object>> execCommand(
+            @PathVariable String vmId,
+            @PathVariable String containerId,
+            @RequestBody Map<String, String> request) {
+        String command = request.getOrDefault("command", "").trim();
+        if (command.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("output", "Empty command", "exitCode", 1));
+        }
+        return ResponseEntity.ok(dockerEngineService.execCommand(vmId, containerId, command));
     }
 
     @GetMapping("/volumes")

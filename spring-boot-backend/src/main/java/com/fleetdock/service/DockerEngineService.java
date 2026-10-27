@@ -391,4 +391,113 @@ public class DockerEngineService {
 
         return emitter;
     }
+
+    public List<String> getLogsList(String vmId, String containerId, int tail) {
+        VmHost host = vmHostService.getHostById(vmId);
+        List<String> result = new ArrayList<>();
+
+        if (sshDockerExecutorService.isSshHost(host)) {
+            try {
+                String rawLogs = sshDockerExecutorService.getLogs(host, containerId, tail);
+                if (rawLogs != null && !rawLogs.isBlank()) {
+                    for (String line : rawLogs.split("\\r?\\n")) {
+                        if (!line.trim().isEmpty()) {
+                            result.add(line);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to fetch logs via SSH for container {}: {}", containerId, e.getMessage());
+                result.add("[ERROR] Failed to fetch container logs over SSH: " + e.getMessage());
+            }
+            return result;
+        }
+
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            List<String> logLines = new ArrayList<>();
+            client.logContainerCmd(containerId)
+                    .withStdOut(true)
+                    .withStdErr(true)
+                    .withFollowStream(false)
+                    .withTail(tail)
+                    .withTimestamps(true)
+                    .exec(new ResultCallback<Frame>() {
+                        @Override
+                        public void onStart(Closeable closeable) {}
+
+                        @Override
+                        public void onNext(Frame frame) {
+                            String line = new String(frame.getPayload(), StandardCharsets.UTF_8).trim();
+                            if (!line.isEmpty()) {
+                                logLines.add(line);
+                            }
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            log.warn("Log fetch error for {}: {}", containerId, throwable.getMessage());
+                        }
+
+                        @Override
+                        public void onComplete() {}
+
+                        @Override
+                        public void close() {}
+                    }).awaitCompletion(10, TimeUnit.SECONDS);
+
+            return logLines;
+        } catch (Exception e) {
+            log.error("Failed to fetch live logs from Docker client for {}: {}", containerId, e.getMessage());
+            result.add("[ERROR] Could not fetch live container logs: " + e.getMessage());
+            return result;
+        }
+    }
+
+    public Map<String, Object> execCommand(String vmId, String containerId, String command) {
+        VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.execCommand(host, containerId, command);
+        }
+
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            ExecCreateCmdResponse execCreate = client.execCreateCmd(containerId)
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
+                    .withCmd("sh", "-c", command)
+                    .exec();
+
+            StringBuilder output = new StringBuilder();
+            client.execStartCmd(execCreate.getId())
+                    .exec(new ResultCallback<Frame>() {
+                        @Override
+                        public void onStart(Closeable closeable) {}
+
+                        @Override
+                        public void onNext(Frame frame) {
+                            output.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            output.append("\nError: ").append(throwable.getMessage());
+                        }
+
+                        @Override
+                        public void onComplete() {}
+
+                        @Override
+                        public void close() {}
+                    }).awaitCompletion(30, TimeUnit.SECONDS);
+
+            InspectExecResponse inspect = client.inspectExecCmd(execCreate.getId()).exec();
+            int exitCode = inspect.getExitCode() != null ? inspect.getExitCode() : 0;
+
+            return Map.of("output", output.toString(), "exitCode", exitCode);
+        } catch (Exception e) {
+            log.error("Docker client exec failed for {}: {}", containerId, e.getMessage());
+            return Map.of("output", "Exec failed: " + e.getMessage(), "exitCode", 1);
+        }
+    }
 }

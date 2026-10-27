@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, 
   Play, 
@@ -6,49 +6,135 @@ import {
   Download, 
   Trash2, 
   Search, 
-  Filter, 
   ArrowDown, 
   Terminal, 
-  CheckCircle2, 
-  AlertTriangle,
-  RotateCcw
+  RotateCw,
+  Server,
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
-import { generateInitialLogs, generateSingleLog } from '../../utils/logsGenerator';
+import { api } from '../../services/api';
+import { parseRawDockerLogLine, generateInitialLogs } from '../../utils/logsGenerator';
 import { LogEntry } from '../../types';
 
 export const ContainerLogsModal: React.FC = () => {
-  const { selectedContainerForLogs, setSelectedContainerForLogs } = useFleet();
+  const { selectedContainerForLogs, setSelectedContainerForLogs, vms } = useFleet();
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(true);
+  const [streamStatus, setStreamStatus] = useState<'connected' | 'connecting' | 'paused' | 'offline'>('connecting');
+  const [dataSourceType, setDataSourceType] = useState<'live' | 'mock'>('live');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'>('ALL');
   const [tailCount, setTailCount] = useState<number>(100);
 
   const logEndRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  // Initialize logs when container is selected
-  useEffect(() => {
-    if (selectedContainerForLogs) {
-      const init = generateInitialLogs(selectedContainerForLogs.name, tailCount);
-      setLogs(init);
+  const targetVm = vms.find((v) => v.id === selectedContainerForLogs?.vmId);
+
+  // Fetch actual logs from backend / Docker daemon
+  const fetchLiveLogs = useCallback(async (tail: number = tailCount) => {
+    if (!selectedContainerForLogs) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const rawLines = await api.getContainerLogs(selectedContainerForLogs.vmId, selectedContainerForLogs.id, tail);
+
+      if (rawLines && rawLines.length > 0) {
+        const parsed = rawLines.map((line) => parseRawDockerLogLine(line, selectedContainerForLogs.id));
+        setLogs(parsed);
+        setDataSourceType('live');
+      } else {
+        // Empty logs or container has no output yet
+        setLogs([
+          {
+            id: `empty-${Date.now()}`,
+            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+            level: 'INFO',
+            message: `[docker] Container ${selectedContainerForLogs.name} (${selectedContainerForLogs.id}) has produced no stdout/stderr log output yet.`,
+            containerId: selectedContainerForLogs.id,
+          },
+        ]);
+        setDataSourceType('live');
+      }
+    } catch (err: any) {
+      console.warn('Live logs fetch returned error:', err);
+      setErrorMessage(err.message || 'Could not query Docker daemon');
+
+      // If mock container or daemon unreachable, provide fallback logs
+      const fallback = generateInitialLogs(selectedContainerForLogs.name, tail);
+      setLogs(fallback);
+      setDataSourceType('mock');
+    } finally {
+      setIsLoading(false);
     }
   }, [selectedContainerForLogs, tailCount]);
 
-  // Streaming log interval
+  // Initial fetch when container is selected or tailCount changed
+  useEffect(() => {
+    if (selectedContainerForLogs) {
+      fetchLiveLogs(tailCount);
+    }
+  }, [selectedContainerForLogs, tailCount, fetchLiveLogs]);
+
+  // Real-time EventSource SSE streaming from target Docker daemon
   useEffect(() => {
     if (!selectedContainerForLogs || !isStreaming || selectedContainerForLogs.state !== 'running') {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      setStreamStatus(selectedContainerForLogs?.state !== 'running' ? 'offline' : 'paused');
       return;
     }
 
-    const interval = setInterval(() => {
-      const newEntry = generateSingleLog(selectedContainerForLogs.name);
-      setLogs((prev) => [...prev.slice(-300), newEntry]);
-    }, 2400);
+    setStreamStatus('connecting');
 
-    return () => clearInterval(interval);
+    try {
+      const streamUrl = api.getContainerLogsStreamUrl(selectedContainerForLogs.vmId, selectedContainerForLogs.id, 20);
+      const es = new EventSource(streamUrl);
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        setStreamStatus('connected');
+        setErrorMessage(null);
+      };
+
+      es.onmessage = (event) => {
+        if (!event.data || !event.data.trim()) return;
+        const rawLine = event.data;
+        const newEntry = parseRawDockerLogLine(rawLine, selectedContainerForLogs.id);
+
+        setLogs((prev) => {
+          // Avoid duplicate lines if identical timestamp and message
+          if (prev.length > 0 && prev[prev.length - 1].message === newEntry.message) {
+            return prev;
+          }
+          return [...prev.slice(-1000), newEntry];
+        });
+      };
+
+      es.onerror = () => {
+        // SSE disconnected (stream closed by server or timeout)
+        setStreamStatus('paused');
+        es.close();
+        eventSourceRef.current = null;
+      };
+
+      return () => {
+        es.close();
+        eventSourceRef.current = null;
+      };
+    } catch (err: any) {
+      setStreamStatus('offline');
+      console.warn('Failed to connect to SSE stream:', err);
+    }
   }, [selectedContainerForLogs, isStreaming]);
 
   // Auto-scroll effect
@@ -72,7 +158,7 @@ export const ContainerLogsModal: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${selectedContainerForLogs.name}-docker.log`;
+    a.download = `${selectedContainerForLogs.name}-${selectedContainerForLogs.id.substring(0, 8)}-docker.log`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -85,6 +171,8 @@ export const ContainerLogsModal: React.FC = () => {
         return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
       case 'DEBUG':
         return 'text-purple-400 bg-purple-500/10 border-purple-500/30';
+      case 'SYSTEM':
+        return 'text-sky-400 bg-sky-500/10 border-sky-500/30';
       default:
         return 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30';
     }
@@ -101,24 +189,50 @@ export const ContainerLogsModal: React.FC = () => {
               <Terminal className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-sm text-slate-100 font-mono">
                   {selectedContainerForLogs.name}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono border border-slate-700">
                   {selectedContainerForLogs.image}
                 </span>
-                {isStreaming && selectedContainerForLogs.state === 'running' ? (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
+
+                {/* Target VM info badge */}
+                {targetVm && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700 flex items-center gap-1">
+                    <Server className="w-2.5 h-2.5" />
+                    <span>{targetVm.name} ({targetVm.ip})</span>
+                  </span>
+                )}
+
+                {/* Stream Status indicator */}
+                {streamStatus === 'connected' ? (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     Live SSE Stream
                   </span>
+                ) : streamStatus === 'connecting' ? (
+                  <span className="flex items-center gap-1 text-[10px] text-sky-400 font-mono bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                    <Activity className="w-2.5 h-2.5 animate-spin" />
+                    Connecting Stream...
+                  </span>
                 ) : (
-                  <span className="text-[10px] text-slate-500 font-mono">Stream Paused</span>
+                  <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
+                    Stream Paused
+                  </span>
                 )}
+
+                {/* Data Source pill */}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                  dataSourceType === 'live'
+                    ? 'text-emerald-300 bg-emerald-950/60 border border-emerald-800/40'
+                    : 'text-amber-300 bg-amber-950/60 border border-amber-800/40'
+                }`}>
+                  {dataSourceType === 'live' ? 'Docker Daemon Logs' : 'Emulated Logs'}
+                </span>
               </div>
-              <p className="text-xs text-slate-400 font-mono">
-                Container ID: {selectedContainerForLogs.id}
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Container ID: {selectedContainerForLogs.id} • State: <span className={selectedContainerForLogs.state === 'running' ? 'text-emerald-400' : 'text-slate-400'}>{selectedContainerForLogs.state}</span>
               </p>
             </div>
           </div>
@@ -131,10 +245,24 @@ export const ContainerLogsModal: React.FC = () => {
           </button>
         </div>
 
+        {/* Error notification banner if any */}
+        {errorMessage && (
+          <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-800/50 flex items-center gap-2 text-xs text-amber-300">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span className="font-mono">{errorMessage}</span>
+            <button
+              onClick={() => fetchLiveLogs(tailCount)}
+              className="ml-auto underline hover:text-white text-xs"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Toolbar: Controls, Filters, Search */}
         <div className="p-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           
-          {/* Left: Stream Toggle, Auto-scroll, Clear */}
+          {/* Left: Stream Toggle, Auto-scroll, Re-fetch, Clear */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsStreaming(!isStreaming)}
@@ -169,10 +297,21 @@ export const ContainerLogsModal: React.FC = () => {
               <span>Auto-scroll: {autoScroll ? 'ON' : 'OFF'}</span>
             </button>
 
+            {/* Re-fetch latest from Docker daemon */}
+            <button
+              onClick={() => fetchLiveLogs(tailCount)}
+              disabled={isLoading}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-cyan-300 border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title="Query Docker daemon now for latest logs"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>{isLoading ? 'Fetching...' : 'Refresh'}</span>
+            </button>
+
             <button
               onClick={() => setLogs([])}
               className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors"
-              title="Clear visible logs"
+              title="Clear visible console"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Clear</span>
@@ -217,6 +356,7 @@ export const ContainerLogsModal: React.FC = () => {
               <option value="100">Tail 100</option>
               <option value="250">Tail 250</option>
               <option value="500">Tail 500</option>
+              <option value="1000">Tail 1000</option>
             </select>
 
             {/* Download */}
@@ -235,7 +375,12 @@ export const ContainerLogsModal: React.FC = () => {
 
         {/* Terminal Log Console */}
         <div className="flex-1 bg-slate-950 p-4 font-mono text-xs overflow-y-auto space-y-1 select-text">
-          {filteredLogs.length === 0 ? (
+          {isLoading && logs.length === 0 ? (
+            <div className="py-20 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
+              <RotateCw className="w-6 h-6 animate-spin text-cyan-400" />
+              <p>Querying container logs from Docker daemon...</p>
+            </div>
+          ) : filteredLogs.length === 0 ? (
             <div className="py-20 text-center text-slate-600">
               <p>No log records matching filter.</p>
             </div>
@@ -256,11 +401,16 @@ export const ContainerLogsModal: React.FC = () => {
 
         {/* Footer info */}
         <div className="px-4 py-2 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500">
-          <span>Showing {filteredLogs.length} lines</span>
-          <span className="text-slate-400">Spring Boot Docker-Java WebSocket / SSE stream active</span>
+          <span>Showing {filteredLogs.length} lines (buffer max: 1000)</span>
+          <span className="text-slate-400 flex items-center gap-2">
+            <span>Docker Engine: {targetVm?.dockerVersion || 'Live Client'}</span>
+            <span>•</span>
+            <span>{streamStatus === 'connected' ? 'SSE Live Stream Active' : 'Polling / Static'}</span>
+          </span>
         </div>
 
       </div>
     </div>
   );
 };
+
