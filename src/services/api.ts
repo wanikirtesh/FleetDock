@@ -232,6 +232,16 @@ export const api = {
     return buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/logs?tail=${tail}&follow=true`);
   },
 
+  getContainerLogsWebSocketUrl: (vmId: string, containerId: string, tail: number = 100): string => {
+    const base = getApiBaseUrl();
+    if (base) {
+      const wsBase = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+      return `${wsBase}/api/v1/ws/logs?vmId=${encodeURIComponent(vmId)}&containerId=${encodeURIComponent(containerId)}&tail=${tail}`;
+    }
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/api/v1/ws/logs?vmId=${encodeURIComponent(vmId)}&containerId=${encodeURIComponent(containerId)}&tail=${tail}`;
+  },
+
   execCommand: async (vmId: string, containerId: string, command: string): Promise<{ output: string; exitCode: number }> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/exec`), {
       method: 'POST',
@@ -240,6 +250,14 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error(`Execution request failed (HTTP ${res.status})`);
+    }
+    return res.json();
+  },
+
+  inspectContainer: async (vmId: string, containerId: string): Promise<any> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/inspect`));
+    if (!res.ok) {
+      throw new Error(`Inspect failed with status ${res.status}`);
     }
     return res.json();
   },
@@ -256,9 +274,79 @@ export const api = {
     return res.json();
   },
 
-  getComposeStacks: async (vmId: string): Promise<any[]> => {
+  getComposeStacks: async (vmId: string): Promise<ComposeStack[]> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/compose`));
     if (!res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+    return list.map((item: any) => {
+      let envVariables = item.envVariables || [];
+      if ((!envVariables || envVariables.length === 0) && item.envVariablesJson) {
+        try {
+          envVariables = JSON.parse(item.envVariablesJson);
+        } catch (_) {}
+      }
+
+      let services = item.services || [];
+      if ((!services || services.length === 0) && item.rawYaml) {
+        const matches = item.rawYaml.match(/^\s{2}([a-zA-Z0-9_-]+):/gm);
+        if (matches) {
+          services = matches.map((m: string) => m.trim().replace(':', ''));
+        }
+      }
+
+      return {
+        id: item.id,
+        vmId: item.vmId || vmId,
+        name: item.name,
+        status: item.status || 'running',
+        rawYaml: item.rawYaml || '',
+        services: Array.isArray(services) && services.length > 0 ? services : [item.name + '-service'],
+        envVariables: Array.isArray(envVariables) ? envVariables : [],
+        lastDeployed: item.lastDeployed ? String(item.lastDeployed).replace('T', ' ').substring(0, 19) : 'Just now',
+        serviceCount: item.serviceCount || (services.length > 0 ? services.length : 1),
+        runningCount: item.runningCount !== undefined ? item.runningCount : (item.status === 'running' ? (item.serviceCount || services.length || 1) : 0),
+      };
+    });
+  },
+
+  updateComposeYaml: async (vmId: string, stackId: string, rawYaml: string): Promise<any> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/compose/${stackId}/yaml`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawYaml }),
+    });
+    if (!res.ok) throw new Error(`Failed to save YAML: ${res.status}`);
+    return res.json();
+  },
+
+  updateComposeVariables: async (vmId: string, stackId: string, variables: any[]): Promise<any> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/compose/${stackId}/variables`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(variables),
+    });
+    if (!res.ok) throw new Error(`Failed to save variables: ${res.status}`);
+    return res.json();
+  },
+
+  executeComposeAction: async (vmId: string, stackId: string, action: 'up' | 'down' | 'restart'): Promise<any> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/compose/${stackId}/${action}`), {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(`Compose action ${action} failed: ${res.status}`);
+    return res.json();
+  },
+
+  execHostCommand: async (vmId: string, command: string, useSudo: boolean = false): Promise<{ output: string; exitCode: number }> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/exec`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, useSudo }),
+    });
+    if (!res.ok) {
+      throw new Error(`Host command failed with status ${res.status}`);
+    }
     return res.json();
   },
 };

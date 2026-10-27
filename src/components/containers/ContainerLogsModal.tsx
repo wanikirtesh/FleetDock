@@ -11,7 +11,9 @@ import {
   RotateCw,
   Server,
   Activity,
-  AlertCircle
+  AlertCircle,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { api } from '../../services/api';
@@ -25,6 +27,7 @@ export const ContainerLogsModal: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(true);
   const [streamStatus, setStreamStatus] = useState<'connected' | 'connecting' | 'paused' | 'offline'>('connecting');
+  const [streamProtocol, setStreamProtocol] = useState<'WebSocket' | 'SSE' | 'Polling'>('WebSocket');
   const [dataSourceType, setDataSourceType] = useState<'live' | 'mock'>('live');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -33,11 +36,19 @@ export const ContainerLogsModal: React.FC = () => {
   const [tailCount, setTailCount] = useState<number>(100);
 
   const logEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   const targetVm = vms.find((v) => v.id === selectedContainerForLogs?.vmId);
+  const currentContainerId = selectedContainerForLogs?.id;
 
-  // Fetch actual logs from backend / Docker daemon
+  // 1. Immediately wipe previous logs and reset state when switching containers!
+  useEffect(() => {
+    setLogs([]);
+    setErrorMessage(null);
+    setIsLoading(true);
+    setStreamStatus('connecting');
+  }, [currentContainerId]);
+
+  // Fetch initial/refreshed logs from backend REST
   const fetchLiveLogs = useCallback(async (tail: number = tailCount) => {
     if (!selectedContainerForLogs) return;
     setIsLoading(true);
@@ -51,13 +62,12 @@ export const ContainerLogsModal: React.FC = () => {
         setLogs(parsed);
         setDataSourceType('live');
       } else {
-        // Empty logs or container has no output yet
         setLogs([
           {
             id: `empty-${Date.now()}`,
             timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
             level: 'INFO',
-            message: `[docker] Container ${selectedContainerForLogs.name} (${selectedContainerForLogs.id}) has produced no stdout/stderr log output yet.`,
+            message: `[docker] Container ${selectedContainerForLogs.name} (${selectedContainerForLogs.id}) has produced no output yet.`,
             containerId: selectedContainerForLogs.id,
           },
         ]);
@@ -67,7 +77,6 @@ export const ContainerLogsModal: React.FC = () => {
       console.warn('Live logs fetch returned error:', err);
       setErrorMessage(err.message || 'Could not query Docker daemon');
 
-      // If mock container or daemon unreachable, provide fallback logs
       const fallback = generateInitialLogs(selectedContainerForLogs.name, tail);
       setLogs(fallback);
       setDataSourceType('mock');
@@ -76,66 +85,137 @@ export const ContainerLogsModal: React.FC = () => {
     }
   }, [selectedContainerForLogs, tailCount]);
 
-  // Initial fetch when container is selected or tailCount changed
+  // 2. Real-time WebSocket connection with automatic SSE fallback
   useEffect(() => {
-    if (selectedContainerForLogs) {
-      fetchLiveLogs(tailCount);
-    }
-  }, [selectedContainerForLogs, tailCount, fetchLiveLogs]);
+    if (!selectedContainerForLogs) return;
 
-  // Real-time EventSource SSE streaming from target Docker daemon
-  useEffect(() => {
-    if (!selectedContainerForLogs || !isStreaming || selectedContainerForLogs.state !== 'running') {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      setStreamStatus(selectedContainerForLogs?.state !== 'running' ? 'offline' : 'paused');
+    if (!isStreaming || selectedContainerForLogs.state !== 'running') {
+      setStreamStatus(selectedContainerForLogs.state !== 'running' ? 'offline' : 'paused');
       return;
     }
 
+    let isCancelled = false;
+    let ws: WebSocket | null = null;
+    let es: EventSource | null = null;
+
     setStreamStatus('connecting');
 
-    try {
-      const streamUrl = api.getContainerLogsStreamUrl(selectedContainerForLogs.vmId, selectedContainerForLogs.id, 20);
-      const es = new EventSource(streamUrl);
-      eventSourceRef.current = es;
+    // Start with quick REST load so logs render without delay
+    fetchLiveLogs(tailCount);
 
-      es.onopen = () => {
-        setStreamStatus('connected');
-        setErrorMessage(null);
-      };
+    // Fallback SSE continuous stream
+    const startSseFallback = () => {
+      if (isCancelled) return;
+      try {
+        const streamUrl = api.getContainerLogsStreamUrl(selectedContainerForLogs.vmId, selectedContainerForLogs.id, 20);
+        es = new EventSource(streamUrl);
+        setStreamProtocol('SSE');
 
-      es.onmessage = (event) => {
-        if (!event.data || !event.data.trim()) return;
-        const rawLine = event.data;
-        const newEntry = parseRawDockerLogLine(rawLine, selectedContainerForLogs.id);
-
-        setLogs((prev) => {
-          // Avoid duplicate lines if identical timestamp and message
-          if (prev.length > 0 && prev[prev.length - 1].message === newEntry.message) {
-            return prev;
+        es.onopen = () => {
+          if (!isCancelled) {
+            setStreamStatus('connected');
+            setErrorMessage(null);
+            setIsLoading(false);
           }
-          return [...prev.slice(-1000), newEntry];
-        });
+        };
+
+        es.onmessage = (event) => {
+          if (isCancelled || !event.data || !event.data.trim()) return;
+          const newEntry = parseRawDockerLogLine(event.data, selectedContainerForLogs.id);
+          setLogs((prev) => {
+            if (prev.length > 0 && prev[prev.length - 1].message === newEntry.message) {
+              return prev;
+            }
+            return [...prev.slice(-1000), newEntry];
+          });
+        };
+
+        es.onerror = () => {
+          if (!isCancelled) setStreamStatus('paused');
+        };
+      } catch {
+        if (!isCancelled) setStreamStatus('paused');
+      }
+    };
+
+    // Primary: Native WebSocket real-time log socket
+    try {
+      const wsUrl = api.getContainerLogsWebSocketUrl(selectedContainerForLogs.vmId, selectedContainerForLogs.id, tailCount);
+      ws = new WebSocket(wsUrl);
+      setStreamProtocol('WebSocket');
+
+      ws.onopen = () => {
+        if (!isCancelled) {
+          setStreamStatus('connected');
+          setErrorMessage(null);
+          setIsLoading(false);
+        }
       };
 
-      es.onerror = () => {
-        // SSE disconnected (stream closed by server or timeout)
-        setStreamStatus('paused');
-        es.close();
-        eventSourceRef.current = null;
+      ws.onmessage = (event) => {
+        if (isCancelled) return;
+        try {
+          const payload = JSON.parse(event.data);
+
+          // Discard packets belonging to a previous container if any delayed message arrives
+          if (payload.containerId && payload.containerId !== selectedContainerForLogs.id && !selectedContainerForLogs.id.startsWith(payload.containerId)) {
+            return;
+          }
+
+          if (payload.type === 'initial' && Array.isArray(payload.logs)) {
+            const parsed = payload.logs.map((l: string) => parseRawDockerLogLine(l, selectedContainerForLogs.id));
+            setLogs(parsed);
+            setIsLoading(false);
+            setDataSourceType('live');
+          } else if (payload.type === 'log' && payload.line) {
+            const newEntry = parseRawDockerLogLine(payload.line, selectedContainerForLogs.id);
+            setLogs((prev) => {
+              if (prev.length > 0 && prev[prev.length - 1].message === newEntry.message) {
+                return prev;
+              }
+              return [...prev.slice(-1000), newEntry];
+            });
+          } else if (payload.type === 'error') {
+            setErrorMessage(payload.message);
+          }
+        } catch {
+          // Plain text log frame
+          if (event.data && typeof event.data === 'string' && event.data.trim()) {
+            const newEntry = parseRawDockerLogLine(event.data, selectedContainerForLogs.id);
+            setLogs((prev) => [...prev.slice(-1000), newEntry]);
+          }
+        }
       };
 
-      return () => {
-        es.close();
-        eventSourceRef.current = null;
+      ws.onerror = () => {
+        if (!isCancelled && ws?.readyState !== WebSocket.OPEN) {
+          ws?.close();
+          ws = null;
+          startSseFallback();
+        }
       };
-    } catch (err: any) {
-      setStreamStatus('offline');
-      console.warn('Failed to connect to SSE stream:', err);
+
+      ws.onclose = () => {
+        if (!isCancelled && isStreaming) {
+          setStreamStatus('paused');
+        }
+      };
+    } catch {
+      startSseFallback();
     }
-  }, [selectedContainerForLogs, isStreaming]);
+
+    return () => {
+      isCancelled = true;
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      if (es) {
+        es.close();
+        es = null;
+      }
+    };
+  }, [currentContainerId, isStreaming, tailCount, fetchLiveLogs]);
 
   // Auto-scroll effect
   useEffect(() => {
@@ -205,20 +285,21 @@ export const ContainerLogsModal: React.FC = () => {
                   </span>
                 )}
 
-                {/* Stream Status indicator */}
+                {/* Real-time Socket Stream status indicator */}
                 {streamStatus === 'connected' ? (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Live SSE Stream
+                  <span className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
+                    <span>Live {streamProtocol} Active</span>
                   </span>
                 ) : streamStatus === 'connecting' ? (
-                  <span className="flex items-center gap-1 text-[10px] text-sky-400 font-mono bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                    <Activity className="w-2.5 h-2.5 animate-spin" />
-                    Connecting Stream...
+                  <span className="flex items-center gap-1.5 text-[10px] text-sky-400 font-mono bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                    <Activity className="w-3 h-3 animate-spin text-sky-400" />
+                    <span>Connecting {streamProtocol}...</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
-                    Stream Paused
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
+                    <WifiOff className="w-3 h-3 text-slate-500" />
+                    <span>Stream Paused</span>
                   </span>
                 )}
 
@@ -275,12 +356,12 @@ export const ContainerLogsModal: React.FC = () => {
               {isStreaming ? (
                 <>
                   <Pause className="w-3.5 h-3.5" />
-                  <span>Pause Stream</span>
+                  <span>Pause Socket</span>
                 </>
               ) : (
                 <>
                   <Play className="w-3.5 h-3.5" />
-                  <span>Resume Stream</span>
+                  <span>Resume Socket</span>
                 </>
               )}
             </button>
@@ -378,7 +459,7 @@ export const ContainerLogsModal: React.FC = () => {
           {isLoading && logs.length === 0 ? (
             <div className="py-20 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
               <RotateCw className="w-6 h-6 animate-spin text-cyan-400" />
-              <p>Querying container logs from Docker daemon...</p>
+              <p>Establishing real-time socket stream with container {selectedContainerForLogs.name}...</p>
             </div>
           ) : filteredLogs.length === 0 ? (
             <div className="py-20 text-center text-slate-600">
@@ -405,7 +486,10 @@ export const ContainerLogsModal: React.FC = () => {
           <span className="text-slate-400 flex items-center gap-2">
             <span>Docker Engine: {targetVm?.dockerVersion || 'Live Client'}</span>
             <span>•</span>
-            <span>{streamStatus === 'connected' ? 'SSE Live Stream Active' : 'Polling / Static'}</span>
+            <span className="flex items-center gap-1 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {streamStatus === 'connected' ? `Real-Time ${streamProtocol} Stream Active` : 'Polling / Static'}
+            </span>
           </span>
         </div>
 

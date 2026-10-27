@@ -39,7 +39,17 @@ export const ComposeExplorer: React.FC = () => {
     return availableStacks[0]?.id || composeStacks[0]?.id || '';
   });
 
-  const activeStack = composeStacks.find((s) => s.id === selectedStackId) || availableStacks[0] || composeStacks[0];
+  // Ensure active stack selects an available stack for the chosen host
+  React.useEffect(() => {
+    if (availableStacks.length > 0) {
+      const exists = availableStacks.some((s) => s.id === selectedStackId);
+      if (!exists) {
+        setSelectedStackId(availableStacks[0].id);
+      }
+    }
+  }, [availableStacks, selectedStackId]);
+
+  const activeStack = availableStacks.find((s) => s.id === selectedStackId) || composeStacks.find((s) => s.id === selectedStackId) || availableStacks[0] || composeStacks[0];
 
   const [activeTab, setActiveTab] = useState<'yaml' | 'variables' | 'services'>('yaml');
   const [editedYaml, setEditedYaml] = useState<string>(activeStack?.rawYaml || '');
@@ -51,10 +61,10 @@ export const ComposeExplorer: React.FC = () => {
   // Sync state when active stack changes
   React.useEffect(() => {
     if (activeStack) {
-      setEditedYaml(activeStack.rawYaml);
-      setVariables(activeStack.envVariables);
+      setEditedYaml(activeStack.rawYaml || '');
+      setVariables(activeStack.envVariables || []);
     }
-  }, [activeStack?.id]);
+  }, [activeStack?.id, activeStack?.rawYaml, activeStack?.envVariables]);
 
   if (!activeStack) {
     return (

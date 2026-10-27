@@ -345,7 +345,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     fetchFromBackend();
   }, []);
 
-  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers
+  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers & compose stacks
   useEffect(() => {
     if (isBackendConnected && selectedVmId && selectedVmId !== 'all') {
       api.getContainers(selectedVmId)
@@ -358,6 +358,20 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         })
         .catch((err) => {
           console.warn(`Could not refresh containers for host ${selectedVmId}:`, err);
+        });
+
+      api.getComposeStacks(selectedVmId)
+        .then((stacks) => {
+          if (stacks && stacks.length > 0) {
+            setComposeStacks((prev) => {
+              const updated = [...prev.filter((s) => s.vmId !== selectedVmId), ...stacks];
+              localStorage.setItem('fleetdock_compose', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn(`Could not refresh compose stacks for host ${selectedVmId}:`, err);
         });
     }
   }, [selectedVmId, isBackendConnected]);
@@ -923,21 +937,43 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const updateComposeYaml = (stackId: string, newYaml: string) => {
-    setComposeStacks((prev) =>
-      prev.map((s) => (s.id === stackId ? { ...s, rawYaml: newYaml } : s))
-    );
+  const updateComposeYaml = async (stackId: string, newYaml: string) => {
+    const stack = composeStacks.find((s) => s.id === stackId);
+    setComposeStacks((prev) => {
+      const updated = prev.map((s) => (s.id === stackId ? { ...s, rawYaml: newYaml } : s));
+      localStorage.setItem('fleetdock_compose', JSON.stringify(updated));
+      return updated;
+    });
+
+    if (isBackendConnected && stack) {
+      try {
+        await api.updateComposeYaml(stack.vmId, stackId, newYaml);
+      } catch (err: any) {
+        console.warn('Backend updateComposeYaml error:', err.message);
+      }
+    }
     addAlert('success', 'Compose YAML Saved', `Updated docker-compose.yml.`);
   };
 
-  const updateComposeVariables = (stackId: string, variables: ComposeVariable[]) => {
-    setComposeStacks((prev) =>
-      prev.map((s) => (s.id === stackId ? { ...s, envVariables: variables } : s))
-    );
+  const updateComposeVariables = async (stackId: string, variables: ComposeVariable[]) => {
+    const stack = composeStacks.find((s) => s.id === stackId);
+    setComposeStacks((prev) => {
+      const updated = prev.map((s) => (s.id === stackId ? { ...s, envVariables: variables } : s));
+      localStorage.setItem('fleetdock_compose', JSON.stringify(updated));
+      return updated;
+    });
+
+    if (isBackendConnected && stack) {
+      try {
+        await api.updateComposeVariables(stack.vmId, stackId, variables);
+      } catch (err: any) {
+        console.warn('Backend updateComposeVariables error:', err.message);
+      }
+    }
     addAlert('success', 'Environment Updated', `Updated compose .env variables.`);
   };
 
-  const executeComposeAction = (stackId: string, action: 'up' | 'down' | 'restart') => {
+  const executeComposeAction = async (stackId: string, action: 'up' | 'down' | 'restart') => {
     const stack = composeStacks.find((s) => s.id === stackId);
     if (!stack) return;
 
@@ -973,6 +1009,14 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         prev.map((c) => (c.composeStack === stack.name ? { ...c, state: 'running', statusText: 'Up Just now (restarted)' } : c))
       );
       addAlert('info', 'Compose Restart', `Restarted stack '${stack.name}'.`);
+    }
+
+    if (isBackendConnected) {
+      try {
+        await api.executeComposeAction(stack.vmId, stackId, action);
+      } catch (err: any) {
+        console.warn('Backend executeComposeAction error:', err.message);
+      }
     }
   };
 

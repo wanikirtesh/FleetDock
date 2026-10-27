@@ -17,8 +17,8 @@ import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -282,8 +282,11 @@ public class DockerEngineService {
                 .build();
     }
 
-    public InspectContainerResponse inspectContainer(String vmId, String containerId) {
+    public Object inspectContainer(String vmId, String containerId) {
         VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.inspectContainer(host, containerId);
+        }
         DockerClient client = dockerClientFactory.getClientForHost(host);
         return client.inspectContainerCmd(containerId).exec();
     }
@@ -338,7 +341,48 @@ public class DockerEngineService {
                         emitter.send(SseEmitter.event().data(line));
                     }
                 }
-                emitter.complete();
+
+                if (!follow) {
+                    emitter.complete();
+                    return emitter;
+                }
+
+                // If follow=true, periodically fetch new runtime logs
+                ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+                AtomicReference<String> lastLineRef = new AtomicReference<>("");
+                String[] split = logs.split("\\r?\\n");
+                if (split.length > 0) {
+                    lastLineRef.set(split[split.length - 1].trim());
+                }
+
+                ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(() -> {
+                    try {
+                        String recent = sshDockerExecutorService.getLogs(host, containerId, 10);
+                        for (String rLine : recent.split("\\r?\\n")) {
+                            String trimmed = rLine.trim();
+                            if (!trimmed.isEmpty() && !trimmed.equals(lastLineRef.get())) {
+                                lastLineRef.set(trimmed);
+                                emitter.send(SseEmitter.event().data(trimmed));
+                            }
+                        }
+                    } catch (Exception pollEx) {
+                        log.debug("SSE log polling stopped: {}", pollEx.getMessage());
+                    }
+                }, 2, 2, TimeUnit.SECONDS);
+
+                emitter.onCompletion(() -> {
+                    task.cancel(true);
+                    scheduler.shutdown();
+                });
+                emitter.onTimeout(() -> {
+                    task.cancel(true);
+                    scheduler.shutdown();
+                });
+                emitter.onError((t) -> {
+                    task.cancel(true);
+                    scheduler.shutdown();
+                });
+
             } catch (Exception e) {
                 log.error("Failed to fetch logs via SSH for container {}: {}", containerId, e.getMessage());
                 emitter.completeWithError(e);
@@ -513,5 +557,16 @@ public class DockerEngineService {
             log.error("Docker client exec failed for {}: {}", containerId, e.getMessage());
             return Map.of("output", "Exec failed: " + e.getMessage(), "exitCode", 1);
         }
+    }
+
+    public Map<String, Object> execHostCommand(String vmId, String command, boolean useSudo) {
+        VmHost host = vmHostService.getHostById(vmId);
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return sshDockerExecutorService.execHostCommand(host, command, useSudo || host.isUseSudo());
+        }
+        return Map.of(
+                "output", "Host " + host.getName() + " (" + host.getIp() + ") does not have direct SSH terminal access configured.",
+                "exitCode", 1
+        );
     }
 }

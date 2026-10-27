@@ -54,7 +54,34 @@ public class SshDockerExecutorService {
         }
     }
 
+    public Map<String, Object> execHostCommand(VmHost host, String shellCommand, boolean withSudo) {
+        long start = System.currentTimeMillis();
+        try {
+            String fullCommand = withSudo ? "sudo -S -p '' " + shellCommand : shellCommand;
+            String output = executeRawCommandOnHost(host, fullCommand, withSudo);
+            long latency = Math.max(1, System.currentTimeMillis() - start);
+            return Map.of(
+                    "output", output.isEmpty() ? "[Process completed with exit code 0]" : output,
+                    "exitCode", 0,
+                    "latencyMs", latency
+            );
+        } catch (Exception e) {
+            long latency = Math.max(1, System.currentTimeMillis() - start);
+            log.error("SSH Host exec failed on {} for command '{}': {}", host.getIp(), shellCommand, e.getMessage());
+            return Map.of(
+                    "output", "Execution error: " + e.getMessage(),
+                    "exitCode", 1,
+                    "latencyMs", latency
+            );
+        }
+    }
+
     private String executeSshCommand(VmHost host, String dockerSubCommand, boolean withSudo) throws Exception {
+        String fullCommand = withSudo ? "sudo -S -p '' docker " + dockerSubCommand : "docker " + dockerSubCommand;
+        return executeRawCommandOnHost(host, fullCommand, withSudo);
+    }
+
+    private String executeRawCommandOnHost(VmHost host, String fullCommand, boolean withSudo) throws Exception {
         JSch jsch = new JSch();
         String username = "root";
         String password = null;
@@ -78,7 +105,6 @@ public class SshDockerExecutorService {
 
         if (privateKey != null && !privateKey.isBlank()) {
             String cleanedKey = privateKey.trim();
-            // Convert literal \n or Windows \r\n to Unix newlines
             if (cleanedKey.contains("\\n")) {
                 cleanedKey = cleanedKey.replace("\\r\\n", "\n").replace("\\n", "\n");
             }
@@ -87,7 +113,6 @@ public class SshDockerExecutorService {
             }
 
             try {
-                // Check if user entered a file path (e.g., C:\Users\... or /home/.../.ssh/id_rsa)
                 java.io.File keyFile = new java.io.File(cleanedKey.trim());
                 if (keyFile.exists() && keyFile.isFile()) {
                     if (passphrase != null && !passphrase.isBlank()) {
@@ -124,7 +149,6 @@ public class SshDockerExecutorService {
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");
         config.put("PreferredAuthentications", "publickey,password,keyboard-interactive");
-        // Ensure compatibility with modern OpenSSH 8.8+ (rsa-sha2-256, rsa-sha2-512, ssh-ed25519)
         config.put("server_host_key", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa");
         config.put("PubkeyAcceptedAlgorithms", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa");
         session.setConfig(config);
@@ -134,15 +158,6 @@ public class SshDockerExecutorService {
         ChannelExec channel = null;
         try {
             channel = (ChannelExec) session.openChannel("exec");
-
-            // Build docker command with sudo if configured
-            String fullCommand;
-            if (withSudo) {
-                // -S reads password from stdin if needed; -p '' suppresses prompt
-                fullCommand = "sudo -S -p '' docker " + dockerSubCommand;
-            } else {
-                fullCommand = "docker " + dockerSubCommand;
-            }
 
             log.info("Executing over SSH on {}:{}: {}", host.getIp(), port, fullCommand);
             channel.setCommand(fullCommand);
@@ -467,6 +482,29 @@ public class SshDockerExecutorService {
         } catch (Exception e) {
             log.error("SSH Docker exec failed on {} for container {}: {}", host.getIp(), containerId, e.getMessage());
             return Map.of("output", "Execution error: " + e.getMessage(), "exitCode", 1);
+        }
+    }
+
+    public String inspectContainerRaw(VmHost host, String containerId) {
+        try {
+            return executeCommandWithFallback(host, "inspect " + containerId);
+        } catch (Exception e) {
+            log.error("SSH Docker inspect failed for container {} on {}: {}", containerId, host.getIp(), e.getMessage());
+            throw new RuntimeException("SSH inspect failed for " + containerId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public Object inspectContainer(VmHost host, String containerId) {
+        try {
+            String rawJson = inspectContainerRaw(host, containerId);
+            JsonNode root = objectMapper.readTree(rawJson);
+            if (root.isArray() && root.size() > 0) {
+                return objectMapper.convertValue(root.get(0), Object.class);
+            }
+            return objectMapper.convertValue(root, Object.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse inspect JSON for container {} on {}: {}", containerId, host.getIp(), e.getMessage());
+            throw new RuntimeException("Inspect parse failed: " + e.getMessage(), e);
         }
     }
 

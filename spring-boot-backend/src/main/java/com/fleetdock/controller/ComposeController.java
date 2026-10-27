@@ -1,7 +1,7 @@
 package com.fleetdock.controller;
 
+import com.fleetdock.dto.ComposeStackDto;
 import com.fleetdock.dto.ComposeVariableDto;
-import com.fleetdock.entity.ComposeStackEntity;
 import com.fleetdock.service.ComposeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,8 +19,8 @@ public class ComposeController {
     private final ComposeService composeService;
 
     @GetMapping
-    public ResponseEntity<List<ComposeStackEntity>> getStacksForHost(@PathVariable String vmId) {
-        return ResponseEntity.ok(composeService.listStacks(vmId));
+    public ResponseEntity<List<ComposeStackDto>> getStacksForHost(@PathVariable String vmId) {
+        return ResponseEntity.ok(composeService.listStacksDto(vmId));
     }
 
     @PostMapping("/{stackId}/up")
@@ -39,7 +39,7 @@ public class ComposeController {
     }
 
     @PutMapping("/{stackId}/variables")
-    public ResponseEntity<ComposeStackEntity> updateVariables(
+    public ResponseEntity<ComposeStackDto> updateVariables(
             @PathVariable String vmId,
             @PathVariable String stackId,
             @RequestBody List<ComposeVariableDto> variables) {
@@ -47,7 +47,7 @@ public class ComposeController {
     }
 
     @PutMapping("/{stackId}/yaml")
-    public ResponseEntity<ComposeStackEntity> updateYaml(
+    public ResponseEntity<ComposeStackDto> updateYaml(
             @PathVariable String vmId,
             @PathVariable String stackId,
             @RequestBody Map<String, String> body) {

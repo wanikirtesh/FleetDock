@@ -60,6 +60,15 @@ public class VmHostController {
         return ResponseEntity.ok(dockerEngineService.listNetworks(id));
     }
 
+    @PostMapping("/{id}/exec")
+    public ResponseEntity<Map<String, Object>> execHostCommand(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> request) {
+        String command = (String) request.getOrDefault("command", "");
+        boolean useSudo = Boolean.TRUE.equals(request.get("useSudo"));
+        return ResponseEntity.ok(dockerEngineService.execHostCommand(id, command, useSudo));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteHost(@PathVariable String id) {
         vmHostService.deleteHost(id);
