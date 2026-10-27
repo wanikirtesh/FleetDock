@@ -17,8 +17,9 @@ import { useFleet } from '../../context/FleetContext';
 import { AuthType } from '../../types';
 
 export const AddVmModal: React.FC = () => {
-  const { isAddVmModalOpen, setIsAddVmModalOpen, addVm } = useFleet();
+  const { isAddVmModalOpen, setIsAddVmModalOpen, addVm, setActiveTab } = useFleet();
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [ip, setIp] = useState('');
   const [port, setPort] = useState(22);
@@ -74,42 +75,50 @@ export const AddVmModal: React.FC = () => {
     }, 800);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !ip) return;
+    if (!name.trim() || !ip.trim()) return;
 
-    const tags = tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
+    setIsSubmitting(true);
+    try {
+      const tags = tagsInput
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
 
-    addVm({
-      name: name.trim(),
-      ip: ip.trim(),
-      port: Number(port),
-      authType,
-      useSudo,
-      authPayload: {
-        username: sshUser,
-        privateKey: sshPrivateKey || '-----BEGIN RSA PRIVATE KEY-----\n[ENCRYPTED_IN_SPRING_BOOT_VAULT]\n-----END RSA PRIVATE KEY-----',
-        passphrase: sshPassphrase,
-        password: password || undefined,
-        tlsCa,
-        tlsCert,
-        tlsKey,
-        agentToken,
+      await addVm({
+        name: name.trim(),
+        ip: ip.trim(),
+        port: Number(port),
+        authType,
         useSudo,
-      },
-      environment,
-      os,
-      arch,
-      cpuCores: Number(cpuCores),
-      memoryGb: Number(memoryGb),
-      diskGb: Number(diskGb),
-      tags,
-    });
+        authPayload: {
+          username: sshUser.trim(),
+          privateKey: sshPrivateKey || '-----BEGIN RSA PRIVATE KEY-----\n[ENCRYPTED_IN_SPRING_BOOT_VAULT]\n-----END RSA PRIVATE KEY-----',
+          passphrase: sshPassphrase,
+          password: password || undefined,
+          tlsCa,
+          tlsCert,
+          tlsKey,
+          agentToken,
+          useSudo,
+        },
+        environment,
+        os,
+        arch,
+        cpuCores: Number(cpuCores),
+        memoryGb: Number(memoryGb),
+        diskGb: Number(diskGb),
+        tags,
+      });
 
-    setIsAddVmModalOpen(false);
+      setIsAddVmModalOpen(false);
+      setActiveTab('containers');
+    } catch (err) {
+      console.error('Registration failed:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -533,11 +542,20 @@ export const AddVmModal: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={!name || !ip}
+              disabled={isSubmitting || !name || !ip}
               className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-medium text-xs flex items-center gap-1.5 transition-colors shadow-lg shadow-cyan-900/30"
             >
-              <Server className="w-3.5 h-3.5" />
-              <span>Register VM Host</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Connecting & Discovering Containers...</span>
+                </>
+              ) : (
+                <>
+                  <Server className="w-3.5 h-3.5" />
+                  <span>Register VM Host</span>
+                </>
+              )}
             </button>
           </div>
 

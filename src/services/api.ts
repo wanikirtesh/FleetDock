@@ -66,8 +66,49 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(hostData),
     });
-    if (!res.ok) throw new Error(`Failed to register host: ${res.status}`);
-    return res.json();
+    if (!res.ok) {
+      let errorMsg = `Failed to register host: ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson.message) errorMsg = errJson.message;
+      } catch (_) {}
+      throw new Error(errorMsg);
+    }
+    const item = await res.json();
+    return {
+      id: item.id,
+      name: item.name,
+      ip: item.ip,
+      port: item.port || 22,
+      authType: (item.authType || 'ssh_key').toLowerCase() as any,
+      useSudo: item.useSudo ?? hostData.useSudo ?? true,
+      environment: item.environment || hostData.environment || 'Production',
+      os: item.os || hostData.os || 'Ubuntu 24.04 LTS',
+      arch: item.arch || hostData.arch || 'x86_64',
+      dockerVersion: item.dockerVersion || 'Docker Engine',
+      apiVersion: item.apiVersion || '1.47',
+      status: item.status || 'online',
+      pingMs: item.pingMs || 0,
+      cpuCores: item.cpuCores || hostData.cpuCores || 4,
+      memoryGb: item.memoryGb || hostData.memoryGb || 16,
+      diskGb: item.diskGb || hostData.diskGb || 250,
+      cpuUsagePercent: item.cpuUsagePercent || 0,
+      memoryUsedPercent: item.memoryUsedPercent || 0,
+      diskUsedPercent: item.diskUsedPercent || 0,
+      tags: hostData.tags || item.tags || ['docker'],
+      lastChecked: 'Just now',
+      authPayload: {
+        username: item.authCredential?.username || hostData.username || 'root',
+        agentToken: item.authCredential?.agentToken || hostData.agentToken || '',
+        useSudo: item.useSudo ?? hostData.useSudo ?? true,
+        privateKey: hostData.privateKey,
+        password: hostData.password,
+        passphrase: hostData.passphrase,
+        tlsCa: hostData.tlsCa,
+        tlsCert: hostData.tlsCert,
+        tlsKey: hostData.tlsKey,
+      },
+    };
   },
 
   updateHost: async (hostId: string, hostData: any): Promise<VMHost> => {

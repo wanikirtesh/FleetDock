@@ -345,6 +345,23 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     fetchFromBackend();
   }, []);
 
+  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers
+  useEffect(() => {
+    if (isBackendConnected && selectedVmId && selectedVmId !== 'all') {
+      api.getContainers(selectedVmId)
+        .then((live) => {
+          setContainers((prev) => {
+            const updated = [...prev.filter((c) => c.vmId !== selectedVmId), ...live];
+            localStorage.setItem('fleetdock_containers', JSON.stringify(updated));
+            return updated;
+          });
+        })
+        .catch((err) => {
+          console.warn(`Could not refresh containers for host ${selectedVmId}:`, err);
+        });
+    }
+  }, [selectedVmId, isBackendConnected]);
+
   const activeVm = useMemo(() => {
     return vms.find((v) => v.id === selectedVmId);
   }, [vms, selectedVmId]);
@@ -403,13 +420,76 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           username: newVm.authPayload?.username,
           privateKey: newVm.authPayload?.privateKey,
           password: newVm.authPayload?.password,
+          passphrase: newVm.authPayload?.passphrase,
+          tlsCa: newVm.authPayload?.tlsCa,
+          tlsCert: newVm.authPayload?.tlsCert,
+          tlsKey: newVm.authPayload?.tlsKey,
           agentToken: newVm.authPayload?.agentToken,
+          useSudo: newVm.useSudo ?? newVm.authPayload?.useSudo ?? true,
+          tags: newVm.tags,
         });
-        setVms((prev) => [...prev, created]);
-        addAlert('success', 'Host Persisted in Spring Boot DB', `Registered VM ${newVm.name} in backend database.`);
+
+        // 1. Immediately update VM state & persist
+        setVms((prev) => {
+          const updated = [...prev.filter((v) => v.id !== created.id), created];
+          localStorage.setItem('fleetdock_vms', JSON.stringify(updated));
+          return updated;
+        });
+
+        // 2. Select this VM immediately so views focus on the newly added host
+        setSelectedVmId(created.id);
+        setActiveTab('containers');
+
+        addAlert('success', 'Host Persisted in Spring Boot DB', `Registered VM ${newVm.name} (${newVm.ip}). Querying Docker daemon...`);
+
+        // 3. Immediately query Docker daemon for live containers on this new host
+        try {
+          const liveContainers = await api.getContainers(created.id);
+          setContainers((prev) => {
+            const updated = [...prev.filter((c) => c.vmId !== created.id), ...liveContainers];
+            localStorage.setItem('fleetdock_containers', JSON.stringify(updated));
+            return updated;
+          });
+          if (liveContainers.length > 0) {
+            addAlert('success', 'Docker Containers Discovered', `Discovered ${liveContainers.length} container(s) running on ${newVm.name}.`);
+          } else {
+            addAlert('info', 'Docker Daemon Connected', `Host ${newVm.name} is online with 0 active containers.`);
+          }
+        } catch (containerErr: any) {
+          console.warn('Could not auto-fetch containers for new host:', containerErr);
+          addAlert('warning', 'Container Fetch Warning', `Host registered, but Docker container query failed: ${containerErr.message}`);
+        }
+
+        // 4. Fetch compose stacks for this new host
+        try {
+          const liveStacks = await api.getComposeStacks(created.id);
+          if (liveStacks && liveStacks.length > 0) {
+            setComposeStacks((prev) => [...prev.filter((s) => s.vmId !== created.id), ...liveStacks]);
+          }
+        } catch (_) {}
+
+        // 5. Background ping to verify latency and Docker engine version
+        api.pingHost(created.id).then((pingRes) => {
+          if (pingRes && pingRes.status === 'online') {
+            setVms((prev) =>
+              prev.map((v) =>
+                v.id === created.id
+                  ? {
+                      ...v,
+                      status: 'online',
+                      pingMs: pingRes.latencyMs || v.pingMs,
+                      dockerVersion: pingRes.dockerVersion ? `Docker Engine ${pingRes.dockerVersion}` : v.dockerVersion,
+                    }
+                  : v
+              )
+            );
+          }
+        }).catch(() => {});
+
         return;
       } catch (err: any) {
         console.warn('Backend register failed, falling back to local state:', err);
+        addAlert('error', 'Backend Registration Failed', err.message || 'Could not register host with backend. Falling back to local mode.');
       }
     }
 
@@ -426,8 +506,62 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       diskUsedPercent: Math.floor(Math.random() * 30 + 15),
       lastChecked: 'Just now',
     };
-    setVms((prev) => [...prev, vmRecord]);
-    addAlert('success', 'Host Registered', `Added VM ${vmRecord.name} (${vmRecord.ip}).`);
+    setVms((prev) => {
+      const updated = [...prev, vmRecord];
+      localStorage.setItem('fleetdock_vms', JSON.stringify(updated));
+      return updated;
+    });
+    setSelectedVmId(vmRecord.id);
+    setActiveTab('containers');
+
+    // In demo/local mode, generate sample containers for the new host
+    const sampleContainers: Container[] = [
+      {
+        id: `c-${id}-01`,
+        vmId: id,
+        name: `${vmRecord.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-web-app`,
+        image: 'nginx:alpine',
+        state: 'running',
+        statusText: 'Up Just now',
+        created: 'Just now',
+        ports: [{ hostPort: 80, containerPort: 80, protocol: 'tcp' }],
+        command: 'nginx -g "daemon off;"',
+        cpuPercent: 0.5,
+        memUsageMb: 32,
+        memLimitMb: 512,
+        netIo: { rxMb: 0.5, txMb: 0.2 },
+        envVars: { APP_ENV: vmRecord.environment.toLowerCase() },
+        labels: {},
+        restartPolicy: 'always',
+        mounts: [],
+      },
+      {
+        id: `c-${id}-02`,
+        vmId: id,
+        name: `${vmRecord.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-worker`,
+        image: 'redis:7.2-alpine',
+        state: 'running',
+        statusText: 'Up Just now',
+        created: 'Just now',
+        ports: [{ hostPort: 6379, containerPort: 6379, protocol: 'tcp' }],
+        command: 'redis-server',
+        cpuPercent: 0.8,
+        memUsageMb: 48,
+        memLimitMb: 1024,
+        netIo: { rxMb: 1.1, txMb: 0.7 },
+        envVars: {},
+        labels: {},
+        restartPolicy: 'unless-stopped',
+        mounts: [],
+      }
+    ];
+    setContainers((prev) => {
+      const updated = [...prev, ...sampleContainers];
+      localStorage.setItem('fleetdock_containers', JSON.stringify(updated));
+      return updated;
+    });
+
+    addAlert('success', 'Host Registered', `Added VM ${vmRecord.name} (${vmRecord.ip}) with live container tracking.`);
   };
 
   const updateVm = async (id: string, updates: Partial<VMHost>) => {
@@ -483,6 +617,17 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return v;
           })
         );
+
+        // Immediately re-query containers for the updated host
+        try {
+          const liveContainers = await api.getContainers(id);
+          setContainers((prev) => {
+            const updated = [...prev.filter((c) => c.vmId !== id), ...liveContainers];
+            localStorage.setItem('fleetdock_containers', JSON.stringify(updated));
+            return updated;
+          });
+        } catch (_) {}
+
         addAlert('success', 'Host Persisted in Spring Boot DB', `Updated VM ${updates.name || id} settings in backend database.`);
         return;
       } catch (err: any) {

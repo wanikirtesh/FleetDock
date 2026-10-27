@@ -325,11 +325,24 @@ export const ContainerList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80 text-slate-300">
-              {filteredContainers.length === 0 ? (
+              {isSyncing && filteredContainers.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <RotateCw className="w-7 h-7 mx-auto mb-2 animate-spin text-cyan-400" />
+                    <p className="text-sm font-medium text-slate-200">Querying live Docker daemon...</p>
+                    <p className="text-xs text-slate-400 mt-1">Discovering running & stopped containers on VM host</p>
+                  </td>
+                </tr>
+              ) : filteredContainers.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-500">
                     <Boxes className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
                     <p className="text-sm">No containers found matching your search or filters.</p>
+                    {selectedVmId !== 'all' && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Deploy a new container or click "Query VM Daemon" above to re-scan.
+                      </p>
+                    )}
                   </td>
                 </tr>
               ) : (
