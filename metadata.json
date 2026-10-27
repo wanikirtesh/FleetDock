@@ -1,0 +1,6 @@
+{
+  "name": "FleetDock - Multi-VM & Container Orchestration Hub",
+  "description": "Centralized dashboard to register remote VMs, manage SSH/Docker credentials, orchestrate containers, stream live logs, and explore docker-compose environments with Spring Boot backend architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

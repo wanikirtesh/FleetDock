@@ -1,0 +1,42 @@
+server:
+  port: 8080
+  compression:
+    enabled: true
+  shutdown: graceful
+
+spring:
+  application:
+    name: fleetdock-orchestrator
+  datasource:
+    # Defaults to in-memory H2 database for immediate zero-config run, or Postgres via env vars
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:fleetdock;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+
+fleetdock:
+  cors:
+    allowed-origins: "*"
+  security:
+    vault-key: ${VAULT_MASTER_KEY:fleetdock-aes-256-master-key-xyz}
+  docker:
+    connection-timeout-seconds: 10
+    response-timeout-seconds: 45
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
