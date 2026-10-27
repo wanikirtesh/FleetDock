@@ -9,7 +9,10 @@ import {
   Code2, 
   RotateCcw,
   Activity,
-  Layers
+  Layers,
+  Database,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 
@@ -22,7 +25,11 @@ export const Header: React.FC = () => {
     setIsAddVmModalOpen, 
     setIsDeployModalOpen,
     setActiveTab,
-    resetToSampleData 
+    resetToSampleData,
+    isBackendConnected,
+    isSyncing,
+    fetchFromBackend,
+    seedBackendDatabase
   } = useFleet();
 
   return (
@@ -70,22 +77,36 @@ export const Header: React.FC = () => {
             </select>
           </div>
 
-          {/* Cluster Status Quick Pill */}
-          <div className="hidden lg:flex items-center gap-3 bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-mono">
-            <div className="flex items-center gap-1.5 text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{clusterStats.onlineVms}/{clusterStats.totalVms} Nodes Online</span>
-            </div>
-            <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1.5 text-cyan-400">
-              <Activity className="w-3.5 h-3.5" />
-              <span>{clusterStats.runningContainers}/{clusterStats.totalContainers} Containers Up</span>
-            </div>
-          </div>
+          {/* Spring Boot Live DB Status Badge */}
+          <button
+            onClick={() => setActiveTab('spring_boot')}
+            className={`hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono border transition-colors ${
+              isBackendConnected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+            }`}
+            title="Click to view Spring Boot backend connection details"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>
+              {isBackendConnected ? 'Spring Boot DB Connected' : 'Demo / Standalone'}
+            </span>
+          </button>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          
+          {/* Refresh / Sync DB button */}
+          <button
+            onClick={() => fetchFromBackend()}
+            disabled={isSyncing}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
+            title="Sync latest data from Spring Boot REST API"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-cyan-400' : ''}`} />
+          </button>
+
           {/* Spring Boot Java Code Center */}
           <button
             onClick={() => setActiveTab('spring_boot')}
@@ -117,7 +138,7 @@ export const Header: React.FC = () => {
           {/* Reset Demo Button */}
           <button
             onClick={resetToSampleData}
-            title="Reset to Demo State"
+            title="Reset to Sample Demo State"
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
           >
             <RotateCcw className="w-4 h-4" />

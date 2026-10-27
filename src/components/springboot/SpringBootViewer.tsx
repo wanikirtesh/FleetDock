@@ -14,25 +14,36 @@ import {
   Activity,
   Archive,
   RefreshCw,
-  FolderGit2
+  FolderGit2,
+  Database,
+  UploadCloud,
+  CheckCircle2,
+  Plus
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { SPRING_BOOT_FILES, SpringBootFile } from '../../data/springBootCode';
+import { useFleet } from '../../context/FleetContext';
 
 export const SpringBootViewer: React.FC = () => {
+  const {
+    vms,
+    backendUrl,
+    setBackendUrl,
+    isBackendConnected,
+    isSyncing,
+    backendEngineInfo,
+    connectToBackend,
+    seedBackendDatabase,
+    fetchFromBackend,
+    dataSource,
+    setDataSource,
+    setIsAddVmModalOpen,
+  } = useFleet();
+
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [copied, setCopied] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
-
-  // Backend live probe state
-  const [backendHealth, setBackendHealth] = useState<{
-    status: string;
-    backendEngine: string;
-    timestamp: string;
-    latencyMs: number;
-  } | null>(null);
-  const [isProbing, setIsProbing] = useState(false);
-  const [customBackendUrl, setCustomBackendUrl] = useState('');
+  const [customBackendUrl, setCustomBackendUrl] = useState(backendUrl || 'http://localhost:8080');
 
   const currentFile = SPRING_BOOT_FILES[activeFileIndex];
 
@@ -59,12 +70,10 @@ export const SpringBootViewer: React.FC = () => {
       const zip = new JSZip();
       const rootFolder = zip.folder('fleetdock-spring-boot-backend');
 
-      // Add all project files into appropriate folder paths
       SPRING_BOOT_FILES.forEach((f) => {
         rootFolder?.file(f.path, f.content);
       });
 
-      // Add README.md
       rootFolder?.file('README.md', `# FleetDock - Spring Boot 3 Java Backend\n\nRun with:\n\`mvn clean spring-boot:run\` or \`docker compose up --build\``);
 
       const content = await zip.generateAsync({ type: 'blob' });
@@ -81,36 +90,9 @@ export const SpringBootViewer: React.FC = () => {
     }
   };
 
-  // Test connection to live backend endpoint
-  const probeBackend = async (url?: string) => {
-    setIsProbing(true);
-    const targetUrl = url ? `${url.replace(/\/$/, '')}/api/v1/health` : '/api/v1/health';
-    const start = performance.now();
-    try {
-      const res = await fetch(targetUrl);
-      const data = await res.json();
-      const latencyMs = Math.round(performance.now() - start);
-      setBackendHealth({
-        status: data.status || 'UP',
-        backendEngine: data.backendEngine || 'Spring Boot 3.3.4 (Java 21)',
-        timestamp: data.timestamp || new Date().toISOString(),
-        latencyMs,
-      });
-    } catch (e: any) {
-      setBackendHealth({
-        status: 'OFFLINE',
-        backendEngine: 'Connection refused or CORS blocked',
-        timestamp: new Date().toISOString(),
-        latencyMs: 0,
-      });
-    } finally {
-      setIsProbing(false);
-    }
+  const handleConnectAndSync = async () => {
+    await connectToBackend(customBackendUrl.trim());
   };
-
-  useEffect(() => {
-    probeBackend();
-  }, []);
 
   const endpoints = [
     { method: 'GET', path: '/api/v1/health', desc: 'Healthcheck, engine version, and uptime' },
@@ -166,7 +148,6 @@ export const SpringBootViewer: React.FC = () => {
               <span>{currentFile.filename}</span>
             </button>
 
-            {/* Download Full ZIP archive */}
             <button
               onClick={handleDownloadFullZip}
               disabled={isZipping}
@@ -178,36 +159,76 @@ export const SpringBootViewer: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Backend Connection Probe Bar */}
-        <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className={`w-2.5 h-2.5 rounded-full ${backendHealth?.status === 'UP' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-            <div>
-              <span className="font-semibold text-slate-200">
-                Backend API Status: <span className={backendHealth?.status === 'UP' ? 'text-emerald-400' : 'text-rose-400'}>{backendHealth?.status || 'CHECKING...'}</span>
-              </span>
-              <span className="text-slate-500 font-mono text-[11px] ml-2">
-                {backendHealth?.backendEngine} ({backendHealth?.latencyMs}ms)
-              </span>
+        {/* Live Backend Connection & Real DB Sync Controller */}
+        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/90 space-y-3">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className={`w-3 h-3 rounded-full ${isBackendConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <div>
+                <span className="font-semibold text-slate-200">
+                  Spring Boot Backend: <span className={isBackendConnected ? 'text-emerald-400' : 'text-amber-400'}>{isBackendConnected ? 'CONNECTED & SYNCED' : 'STANDALONE DEMO'}</span>
+                </span>
+                <span className="text-slate-400 font-mono text-[11px] ml-2 block sm:inline">
+                  {backendEngineInfo} • {vms.length} Hosts in UI
+                </span>
+              </div>
+            </div>
+
+            {/* Target Spring Boot URL & Connect Button */}
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <input
+                type="text"
+                value={customBackendUrl}
+                onChange={(e) => setCustomBackendUrl(e.target.value)}
+                placeholder="http://localhost:8080"
+                className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500 w-full md:w-64"
+              />
+              <button
+                onClick={handleConnectAndSync}
+                disabled={isSyncing}
+                className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Syncing...' : 'Connect & Sync DB'}</span>
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <input
-              type="text"
-              value={customBackendUrl}
-              onChange={(e) => setCustomBackendUrl(e.target.value)}
-              placeholder="Custom Spring Boot URL (e.g. http://localhost:8080)"
-              className="px-2.5 py-1 rounded bg-slate-900 border border-slate-800 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500 w-full md:w-72"
-            />
-            <button
-              onClick={() => probeBackend(customBackendUrl || undefined)}
-              disabled={isProbing}
-              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono text-xs border border-slate-700 shrink-0 flex items-center gap-1 transition-colors"
-            >
-              <RefreshCw className={`w-3 h-3 ${isProbing ? 'animate-spin' : ''}`} />
-              <span>Test Ping</span>
-            </button>
+          {/* Database Operations Bar */}
+          <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Database className="w-4 h-4 text-cyan-400" />
+              <span>
+                Active Database: <strong className="text-slate-200">{dataSource === 'spring_boot' ? 'Spring Boot REST API (PostgreSQL/H2)' : 'In-Memory Demo'}</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => seedBackendDatabase()}
+                disabled={isSyncing}
+                className="px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                title="Populate your local Spring Boot database (H2/PostgreSQL) with initial VM records via POST /api/v1/hosts/register"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>Seed Spring Boot DB with Hosts</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddVmModalOpen(true)}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Register VM in DB</span>
+              </button>
+
+              <button
+                onClick={() => setDataSource(dataSource === 'spring_boot' ? 'mock' : 'spring_boot')}
+                className="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200 underline text-[11px]"
+              >
+                Switch to {dataSource === 'spring_boot' ? 'Demo Mode' : 'Live Mode'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -247,7 +268,7 @@ export const SpringBootViewer: React.FC = () => {
           </div>
 
           <div className="pt-3 border-t border-slate-800 px-2 text-[11px] text-slate-500 space-y-1">
-            <p>Ready to run on any machine:</p>
+            <p>Run locally with Maven:</p>
             <code className="text-cyan-400 block font-mono text-[10px] bg-slate-950 p-1.5 rounded">
               mvn clean spring-boot:run
             </code>

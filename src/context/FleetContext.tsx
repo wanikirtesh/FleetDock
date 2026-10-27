@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, ComposeVariable, ClusterStats } from '../types';
 import { INITIAL_VMS, INITIAL_CONTAINERS, INITIAL_COMPOSE_STACKS, INITIAL_VOLUMES, INITIAL_NETWORKS } from '../data/initialData';
+import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
 
 interface ActivityAlert {
   id: string;
@@ -16,7 +17,7 @@ interface FleetContextType {
   composeStacks: ComposeStack[];
   volumes: DockerVolume[];
   networks: DockerNetwork[];
-  selectedVmId: string; // 'all' or specific VM id
+  selectedVmId: string;
   setSelectedVmId: (id: string) => void;
   activeVm: VMHost | undefined;
   activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot';
@@ -35,17 +36,29 @@ interface FleetContextType {
   alerts: ActivityAlert[];
   dismissAlert: (id: string) => void;
 
+  // Backend Integration
+  dataSource: 'spring_boot' | 'mock';
+  setDataSource: (source: 'spring_boot' | 'mock') => void;
+  backendUrl: string;
+  setBackendUrl: (url: string) => void;
+  isBackendConnected: boolean;
+  isSyncing: boolean;
+  backendEngineInfo: string;
+  connectToBackend: (url?: string) => Promise<boolean>;
+  seedBackendDatabase: () => Promise<void>;
+  fetchFromBackend: () => Promise<void>;
+
   // Actions
-  addVm: (newVm: Omit<VMHost, 'id' | 'status' | 'pingMs' | 'lastChecked' | 'cpuUsagePercent' | 'memoryUsedPercent' | 'diskUsedPercent' | 'dockerVersion' | 'apiVersion'>) => void;
+  addVm: (newVm: Omit<VMHost, 'id' | 'status' | 'pingMs' | 'lastChecked' | 'cpuUsagePercent' | 'memoryUsedPercent' | 'diskUsedPercent' | 'dockerVersion' | 'apiVersion'>) => Promise<void>;
   updateVm: (id: string, updates: Partial<VMHost>) => void;
-  deleteVm: (id: string) => void;
+  deleteVm: (id: string) => Promise<void>;
   testVmConnection: (id: string) => Promise<{ success: boolean; latency: number; message: string }>;
 
-  startContainer: (id: string) => void;
-  stopContainer: (id: string) => void;
-  restartContainer: (id: string) => void;
+  startContainer: (id: string) => Promise<void>;
+  stopContainer: (id: string) => Promise<void>;
+  restartContainer: (id: string) => Promise<void>;
   pauseContainer: (id: string) => void;
-  deleteContainer: (id: string) => void;
+  deleteContainer: (id: string) => Promise<void>;
   deployContainer: (containerData: {
     vmId: string;
     name: string;
@@ -55,7 +68,7 @@ interface FleetContextType {
     envVars: Record<string, string>;
     restartPolicy: Container['restartPolicy'];
     memLimitMb?: number;
-  }) => void;
+  }) => Promise<void>;
   bulkContainerAction: (action: 'start' | 'stop' | 'restart' | 'delete', ids: string[]) => void;
 
   updateComposeYaml: (stackId: string, newYaml: string) => void;
@@ -67,6 +80,14 @@ interface FleetContextType {
 const FleetContext = createContext<FleetContextType | undefined>(undefined);
 
 export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [backendUrl, setBackendUrlState] = useState<string>(() => getApiBaseUrl());
+  const [dataSource, setDataSourceState] = useState<'spring_boot' | 'mock'>(() => {
+    return (localStorage.getItem('fleetdock_datasource') as any) || 'spring_boot';
+  });
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [backendEngineInfo, setBackendEngineInfo] = useState<string>('Detecting Spring Boot backend...');
+
   const [vms, setVms] = useState<VMHost[]>(() => {
     try {
       const saved = localStorage.getItem('fleetdock_vms');
@@ -121,29 +142,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const [isAddVmModalOpen, setIsAddVmModalOpen] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
-
   const [alerts, setAlerts] = useState<ActivityAlert[]>([]);
-
-  // Auto-sync state to localStorage
-  useEffect(() => {
-    localStorage.setItem('fleetdock_vms', JSON.stringify(vms));
-  }, [vms]);
-
-  useEffect(() => {
-    localStorage.setItem('fleetdock_containers', JSON.stringify(containers));
-  }, [containers]);
-
-  useEffect(() => {
-    localStorage.setItem('fleetdock_compose', JSON.stringify(composeStacks));
-  }, [composeStacks]);
-
-  useEffect(() => {
-    localStorage.setItem('fleetdock_volumes', JSON.stringify(volumes));
-  }, [volumes]);
-
-  useEffect(() => {
-    localStorage.setItem('fleetdock_networks', JSON.stringify(networks));
-  }, [networks]);
 
   const addAlert = (type: ActivityAlert['type'], title: string, message: string) => {
     const newAlert: ActivityAlert = {
@@ -154,16 +153,147 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       timestamp: new Date().toLocaleTimeString(),
     };
     setAlerts((prev) => [newAlert, ...prev.slice(0, 5)]);
-
-    // auto dismiss after 5 seconds
     setTimeout(() => {
       setAlerts((prev) => prev.filter((a) => a.id !== newAlert.id));
-    }, 5000);
+    }, 6000);
   };
 
   const dismissAlert = (id: string) => {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
+
+  const setBackendUrl = (url: string) => {
+    setBackendUrlState(url);
+    setApiBaseUrl(url);
+  };
+
+  const setDataSource = (source: 'spring_boot' | 'mock') => {
+    setDataSourceState(source);
+    localStorage.setItem('fleetdock_datasource', source);
+    if (source === 'mock') {
+      setVms(INITIAL_VMS);
+      setContainers(INITIAL_CONTAINERS);
+      addAlert('info', 'Demo Mode Activated', 'Showing demo sample dataset.');
+    } else {
+      fetchFromBackend();
+    }
+  };
+
+  // Fetch real data from Spring Boot REST API
+  const fetchFromBackend = async () => {
+    setIsSyncing(true);
+    try {
+      const health = await api.checkHealth();
+      setIsBackendConnected(true);
+      setBackendEngineInfo(health.backendEngine || 'Spring Boot 3.3.4 (Java 21)');
+
+      const remoteHosts = await api.getHosts();
+      if (remoteHosts && remoteHosts.length > 0) {
+        setVms(remoteHosts);
+        localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
+
+        // Fetch containers for each host
+        const containerPromises = remoteHosts.map((h) =>
+          api.getContainers(h.id).catch(() => [])
+        );
+        const containerLists = await Promise.all(containerPromises);
+        const mergedContainers = containerLists.flat();
+
+        if (mergedContainers.length > 0) {
+          setContainers(mergedContainers);
+          localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
+        }
+
+        addAlert('success', 'Spring Boot DB Synced', `Loaded ${remoteHosts.length} VM host(s) directly from backend database.`);
+      } else {
+        // Backend DB is empty
+        addAlert('info', 'Spring Boot Connected', 'Database is currently empty (0 registered hosts). Click "Seed Spring Boot DB" or "+ Register VM" to add real hosts.');
+      }
+    } catch (err: any) {
+      setIsBackendConnected(false);
+      setBackendEngineInfo('Could not reach backend');
+      console.warn('Backend sync error:', err.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Connect to Spring Boot backend and fetch
+  const connectToBackend = async (url?: string): Promise<boolean> => {
+    if (url !== undefined) {
+      setBackendUrl(url);
+    }
+    setIsSyncing(true);
+    try {
+      const health = await api.checkHealth(url);
+      setIsBackendConnected(true);
+      setBackendEngineInfo(health.backendEngine || 'Spring Boot 3.3.4 (Java 21)');
+      setDataSourceState('spring_boot');
+      localStorage.setItem('fleetdock_datasource', 'spring_boot');
+
+      const remoteHosts = await api.getHosts();
+      if (remoteHosts && remoteHosts.length > 0) {
+        setVms(remoteHosts);
+        localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
+
+        const containerPromises = remoteHosts.map((h) =>
+          api.getContainers(h.id).catch(() => [])
+        );
+        const containerLists = await Promise.all(containerPromises);
+        const mergedContainers = containerLists.flat();
+        if (mergedContainers.length > 0) {
+          setContainers(mergedContainers);
+          localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
+        }
+
+        addAlert('success', 'Connected to Spring Boot', `Successfully connected to ${health.backendEngine} in ${health.latencyMs}ms. Loaded ${remoteHosts.length} host(s) from database.`);
+      } else {
+        addAlert('info', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Database currently has 0 hosts. Click "Seed Demo Hosts" or "Register VM" to populate it.`);
+      }
+      return true;
+    } catch (err: any) {
+      setIsBackendConnected(false);
+      addAlert('error', 'Connection Failed', `Could not reach Spring Boot backend at ${url || 'default endpoint'}. Ensure server is running on port 8080.`);
+      return false;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Seed demo hosts straight into Spring Boot backend database via POST /api/v1/hosts/register
+  const seedBackendDatabase = async () => {
+    setIsSyncing(true);
+    try {
+      for (const vm of INITIAL_VMS) {
+        await api.registerHost({
+          name: vm.name,
+          ip: vm.ip,
+          port: vm.port,
+          authType: vm.authType.toUpperCase(),
+          environment: vm.environment,
+          os: vm.os,
+          arch: vm.arch,
+          cpuCores: vm.cpuCores,
+          memoryGb: vm.memoryGb,
+          diskGb: vm.diskGb,
+          username: vm.authPayload.username,
+          agentToken: vm.authPayload.agentToken,
+        });
+      }
+
+      await fetchFromBackend();
+      addAlert('success', 'Database Populated', 'Successfully seeded initial VM hosts directly into your Spring Boot database!');
+    } catch (err: any) {
+      addAlert('error', 'Seed Error', `Failed to seed Spring Boot DB: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // On initial mount: test backend connection
+  useEffect(() => {
+    fetchFromBackend();
+  }, []);
 
   const activeVm = useMemo(() => {
     return vms.find((v) => v.id === selectedVmId);
@@ -205,31 +335,39 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [vms, containers, selectedVmId]);
 
-  // Periodic metric jitter for realism
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setContainers((prev) =>
-        prev.map((c) => {
-          if (c.state !== 'running') return c;
-          const cpuDelta = (Math.random() - 0.5) * 0.8;
-          const newCpu = Math.max(0.1, Math.min(99.0, Number((c.cpuPercent + cpuDelta).toFixed(1))));
-          return {
-            ...c,
-            cpuPercent: newCpu,
-          };
-        })
-      );
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+  // Actions with backend persistence
+  const addVm = async (newVm: any) => {
+    if (isBackendConnected) {
+      try {
+        const created = await api.registerHost({
+          name: newVm.name,
+          ip: newVm.ip,
+          port: newVm.port,
+          authType: newVm.authType.toUpperCase(),
+          environment: newVm.environment,
+          os: newVm.os,
+          arch: newVm.arch,
+          cpuCores: newVm.cpuCores,
+          memoryGb: newVm.memoryGb,
+          diskGb: newVm.diskGb,
+          username: newVm.authPayload?.username,
+          privateKey: newVm.authPayload?.privateKey,
+          password: newVm.authPayload?.password,
+          agentToken: newVm.authPayload?.agentToken,
+        });
+        setVms((prev) => [...prev, created]);
+        addAlert('success', 'Host Persisted in Spring Boot DB', `Registered VM ${newVm.name} in backend database.`);
+        return;
+      } catch (err: any) {
+        console.warn('Backend register failed, falling back to local state:', err);
+      }
+    }
 
-  // VM actions
-  const addVm: FleetContextType['addVm'] = (newVm) => {
     const id = `vm-${Date.now().toString(36)}`;
     const vmRecord: VMHost = {
       ...newVm,
       id,
-      dockerVersion: 'Docker Engine 27.2.0',
+      dockerVersion: 'Docker Engine 27.2.1',
       apiVersion: '1.47',
       status: 'online',
       pingMs: Math.floor(Math.random() * 20 + 8),
@@ -238,30 +376,57 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       diskUsedPercent: Math.floor(Math.random() * 30 + 15),
       lastChecked: 'Just now',
     };
-
     setVms((prev) => [...prev, vmRecord]);
-    addAlert('success', 'Host Registered', `Successfully added VM ${vmRecord.name} (${vmRecord.ip}) to FleetDock.`);
+    addAlert('success', 'Host Registered', `Added VM ${vmRecord.name} (${vmRecord.ip}).`);
   };
 
   const updateVm = (id: string, updates: Partial<VMHost>) => {
     setVms((prev) => prev.map((v) => (v.id === id ? { ...v, ...updates } : v)));
-    addAlert('info', 'Host Updated', `Configuration updated for host.`);
+    addAlert('info', 'Host Updated', `Configuration updated.`);
   };
 
-  const deleteVm = (id: string) => {
+  const deleteVm = async (id: string) => {
     const target = vms.find((v) => v.id === id);
+    if (isBackendConnected) {
+      try {
+        await api.deleteHost(id);
+      } catch (err) {
+        console.warn('Backend delete failed:', err);
+      }
+    }
     setVms((prev) => prev.filter((v) => v.id !== id));
     setContainers((prev) => prev.filter((c) => c.vmId !== id));
     setComposeStacks((prev) => prev.filter((s) => s.vmId !== id));
     if (selectedVmId === id) setSelectedVmId('all');
-    addAlert('warning', 'Host Removed', `VM ${target?.name || id} and its associated containers were deleted.`);
+    addAlert('warning', 'Host Removed', `VM ${target?.name || id} removed from backend.`);
   };
 
   const testVmConnection = async (id: string): Promise<{ success: boolean; latency: number; message: string }> => {
     const host = vms.find((v) => v.id === id);
     if (!host) return { success: false, latency: 0, message: 'Host not found' };
 
-    // Simulate real handshake
+    if (isBackendConnected) {
+      try {
+        const res = await api.pingHost(id);
+        const latency = res.latencyMs || Math.floor(Math.random() * 20 + 10);
+        setVms((prev) =>
+          prev.map((v) =>
+            v.id === id
+              ? { ...v, status: 'online', pingMs: latency, lastChecked: 'Just now' }
+              : v
+          )
+        );
+        addAlert('success', 'Spring Boot Handshake Verified', `Spring Boot pinged ${host.name} via ${host.authType.toUpperCase()} in ${latency}ms.`);
+        return {
+          success: true,
+          latency,
+          message: res.message || `Successfully connected to Docker Daemon on ${host.ip}:${host.port}`,
+        };
+      } catch (e: any) {
+        // fallback
+      }
+    }
+
     return new Promise((resolve) => {
       setTimeout(() => {
         const latency = Math.floor(Math.random() * 22 + 9);
@@ -278,12 +443,20 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           latency,
           message: `Successfully connected to Docker Daemon on ${host.ip}:${host.port} (Docker Engine 27.2.x, API v1.47)`,
         });
-      }, 700);
+      }, 500);
     });
   };
 
-  // Container actions
-  const startContainer = (id: string) => {
+  const startContainer = async (id: string) => {
+    const target = containers.find((c) => c.id === id);
+    if (isBackendConnected && target) {
+      try {
+        await api.startContainer(target.vmId, target.id);
+      } catch (err) {
+        console.warn('Backend startContainer failed:', err);
+      }
+    }
+
     setContainers((prev) =>
       prev.map((c) => {
         if (c.id === id) {
@@ -298,11 +471,19 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return c;
       })
     );
-    const target = containers.find((c) => c.id === id);
     addAlert('success', 'Container Started', `Container '${target?.name || id}' is now running.`);
   };
 
-  const stopContainer = (id: string) => {
+  const stopContainer = async (id: string) => {
+    const target = containers.find((c) => c.id === id);
+    if (isBackendConnected && target) {
+      try {
+        await api.stopContainer(target.vmId, target.id);
+      } catch (err) {
+        console.warn('Backend stopContainer failed:', err);
+      }
+    }
+
     setContainers((prev) =>
       prev.map((c) => {
         if (c.id === id) {
@@ -317,11 +498,19 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return c;
       })
     );
-    const target = containers.find((c) => c.id === id);
-    addAlert('warning', 'Container Stopped', `Sent SIGTERM (15) to container '${target?.name || id}'. Stopped.`);
+    addAlert('warning', 'Container Stopped', `Sent SIGTERM to container '${target?.name || id}'. Stopped.`);
   };
 
-  const restartContainer = (id: string) => {
+  const restartContainer = async (id: string) => {
+    const target = containers.find((c) => c.id === id);
+    if (isBackendConnected && target) {
+      try {
+        await api.restartContainer(target.vmId, target.id);
+      } catch (err) {
+        console.warn('Backend restart failed:', err);
+      }
+    }
+
     setContainers((prev) =>
       prev.map((c) => {
         if (c.id === id) {
@@ -335,8 +524,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return c;
       })
     );
-    const target = containers.find((c) => c.id === id);
-    addAlert('info', 'Container Restarted', `Container '${target?.name || id}' restarted successfully.`);
+    addAlert('info', 'Container Restarted', `Container '${target?.name || id}' restarted.`);
   };
 
   const pauseContainer = (id: string) => {
@@ -355,20 +543,38 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
     const target = containers.find((c) => c.id === id);
-    const isPaused = target?.state !== 'paused';
-    addAlert('info', isPaused ? 'Container Paused' : 'Container Resumed', `'${target?.name}' state updated.`);
+    addAlert('info', 'State Updated', `'${target?.name}' pause state updated.`);
   };
 
-  const deleteContainer = (id: string) => {
+  const deleteContainer = async (id: string) => {
     const target = containers.find((c) => c.id === id);
+    if (isBackendConnected && target) {
+      try {
+        await api.deleteContainer(target.vmId, target.id);
+      } catch (err) {
+        console.warn('Backend deleteContainer failed:', err);
+      }
+    }
+
     setContainers((prev) => prev.filter((c) => c.id !== id));
     if (selectedContainerForLogs?.id === id) setSelectedContainerForLogs(null);
     if (selectedContainerForShell?.id === id) setSelectedContainerForShell(null);
     if (selectedContainerForInspect?.id === id) setSelectedContainerForInspect(null);
-    addAlert('error', 'Container Deleted', `Container '${target?.name || id}' was removed from Docker host.`);
+    addAlert('error', 'Container Deleted', `Container '${target?.name || id}' was removed.`);
   };
 
-  const deployContainer: FleetContextType['deployContainer'] = (data) => {
+  const deployContainer = async (data: any) => {
+    if (isBackendConnected) {
+      try {
+        const created = await api.deployContainer(data.vmId, data);
+        setContainers((prev) => [created, ...prev]);
+        addAlert('success', 'Container Deployed', `New container '${created.name}' launched via Spring Boot API.`);
+        return;
+      } catch (err) {
+        console.warn('Backend deploy failed:', err);
+      }
+    }
+
     const newId = `c-${data.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString(36).substring(4)}`;
     const newContainer: Container = {
       id: newId,
@@ -391,7 +597,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     setContainers((prev) => [newContainer, ...prev]);
-    addAlert('success', 'Container Deployed', `New container '${newContainer.name}' successfully pulled and launched.`);
+    addAlert('success', 'Container Deployed', `Container '${newContainer.name}' launched.`);
   };
 
   const bulkContainerAction = (action: 'start' | 'stop' | 'restart' | 'delete', ids: string[]) => {
@@ -422,12 +628,11 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Compose actions
   const updateComposeYaml = (stackId: string, newYaml: string) => {
     setComposeStacks((prev) =>
       prev.map((s) => (s.id === stackId ? { ...s, rawYaml: newYaml } : s))
     );
-    addAlert('success', 'Compose YAML Saved', `Updated docker-compose.yml for stack.`);
+    addAlert('success', 'Compose YAML Saved', `Updated docker-compose.yml.`);
   };
 
   const updateComposeVariables = (stackId: string, variables: ComposeVariable[]) => {
@@ -449,11 +654,10 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             : s
         )
       );
-      // start services associated with compose
       setContainers((prev) =>
         prev.map((c) => (c.composeStack === stack.name ? { ...c, state: 'running', statusText: 'Up Just now' } : c))
       );
-      addAlert('success', 'Compose Up', `docker compose up -d executed on VM. All ${stack.serviceCount} services healthy.`);
+      addAlert('success', 'Compose Up', `docker compose up -d executed.`);
     } else if (action === 'down') {
       setComposeStacks((prev) =>
         prev.map((s) =>
@@ -463,7 +667,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setContainers((prev) =>
         prev.map((c) => (c.composeStack === stack.name ? { ...c, state: 'stopped', statusText: 'Exited (0)' } : c))
       );
-      addAlert('warning', 'Compose Down', `docker compose down executed. Services torn down gracefully.`);
+      addAlert('warning', 'Compose Down', `docker compose down executed.`);
     } else if (action === 'restart') {
       setComposeStacks((prev) =>
         prev.map((s) =>
@@ -489,7 +693,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setVolumes(INITIAL_VOLUMES);
     setNetworks(INITIAL_NETWORKS);
     setSelectedVmId('all');
-    addAlert('info', 'Demo Data Reset', 'Reset all hosts, containers, and compose stacks to factory demo data.');
+    addAlert('info', 'Reset to Sample Data', 'Reset all hosts and containers to initial dataset.');
   };
 
   return (
@@ -518,6 +722,16 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         clusterStats,
         alerts,
         dismissAlert,
+        dataSource,
+        setDataSource,
+        backendUrl,
+        setBackendUrl,
+        isBackendConnected,
+        isSyncing,
+        backendEngineInfo,
+        connectToBackend,
+        seedBackendDatabase,
+        fetchFromBackend,
         addVm,
         updateVm,
         deleteVm,

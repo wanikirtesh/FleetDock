@@ -173,8 +173,28 @@ export const ClusterOverview: React.FC = () => {
         </div>
 
         {/* Nodes Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-          {vms.map((vm) => {
+        {vms.length === 0 ? (
+          <div className="p-8 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
+            <Server className="w-10 h-10 mx-auto text-cyan-400 opacity-60" />
+            <h3 className="text-base font-semibold text-slate-200">
+              Spring Boot Database is Empty (0 Hosts)
+            </h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Your Spring Boot backend is connected. You can register your own VM host or seed the database with initial cluster nodes.
+            </p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setIsAddVmModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Register VM</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+            {vms.map((vm) => {
             const hostContainers = containers.filter((c) => c.vmId === vm.id);
             const runningCount = hostContainers.filter((c) => c.state === 'running').length;
             const isPinging = testingId === vm.id;
@@ -300,7 +320,8 @@ export const ClusterOverview: React.FC = () => {
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* System Highlights / Quick Navigation Banner */}
