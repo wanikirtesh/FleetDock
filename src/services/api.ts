@@ -370,4 +370,20 @@ export const api = {
     }
     return res.json();
   },
+
+  getHostMetrics: async (vmId: string): Promise<{
+    vmId: string;
+    source: string;
+    cpuPercent: number;
+    memPercent: number;
+    diskPercent: number;
+    memTotalMb: number;
+    memUsedMb: number;
+    cpuCores?: number;
+    error?: string;
+  }> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/metrics`));
+    if (!res.ok) throw new Error(`Metrics fetch failed: ${res.status}`);
+    return res.json();
+  },
 };

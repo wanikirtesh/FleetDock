@@ -569,4 +569,187 @@ public class DockerEngineService {
                 "exitCode", 1
         );
     }
+
+    /**
+     * Fetches real-time CPU, memory, and disk metrics from the target VM.
+     * - For SSH hosts: uses shell commands (top, free, df).
+     * - For Docker socket hosts: uses Docker system info + container stats.
+     */
+    public Map<String, Object> getHostMetrics(String vmId) {
+        VmHost host = vmHostService.getHostById(vmId);
+
+        if (sshDockerExecutorService.isSshHost(host)) {
+            return getMetricsViaSsh(host);
+        }
+        return getMetricsViaDockerSocket(host);
+    }
+
+    private Map<String, Object> getMetricsViaSsh(VmHost host) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("vmId", host.getId());
+        result.put("source", "ssh");
+
+        try {
+            // CPU usage: get idle% from top -bn1, subtract from 100
+            String cpuOutput = sshDockerExecutorService.execHostCommand(host,
+                    "top -bn1 | grep 'Cpu(s)' | awk '{print $8}' | tr -d '%id,'", false)
+                    .get("output").toString().trim();
+
+            double cpuIdle = 0;
+            try {
+                // Try to extract numeric idle value; fallback to mpstat approach
+                cpuIdle = Double.parseDouble(cpuOutput.replaceAll("[^0-9.]", "").trim());
+            } catch (NumberFormatException e) {
+                // Fallback: use vmstat
+                try {
+                    String vmstatOut = sshDockerExecutorService.execHostCommand(host,
+                            "vmstat 1 1 | awk 'NR==3{print $15}'", false)
+                            .get("output").toString().trim();
+                    cpuIdle = Double.parseDouble(vmstatOut.trim());
+                } catch (Exception ignored) {}
+            }
+            double cpuPercent = Math.max(0, Math.min(100, 100.0 - cpuIdle));
+            result.put("cpuPercent", Math.round(cpuPercent * 10.0) / 10.0);
+
+            // Memory: use free -m
+            String memOutput = sshDockerExecutorService.execHostCommand(host,
+                    "free -m | awk '/^Mem:/{printf \"%s %s\", $2, $3}'", false)
+                    .get("output").toString().trim();
+            String[] memParts = memOutput.split("\\s+");
+            if (memParts.length >= 2) {
+                long totalMb = Long.parseLong(memParts[0].replaceAll("[^0-9]", "").trim());
+                long usedMb  = Long.parseLong(memParts[1].replaceAll("[^0-9]", "").trim());
+                double memPercent = totalMb > 0 ? (usedMb * 100.0 / totalMb) : 0;
+                result.put("memTotalMb", totalMb);
+                result.put("memUsedMb", usedMb);
+                result.put("memPercent", Math.round(memPercent * 10.0) / 10.0);
+            } else {
+                result.put("memTotalMb", host.getMemoryGb() * 1024L);
+                result.put("memUsedMb", 0);
+                result.put("memPercent", host.getMemoryUsedPercent());
+            }
+
+            // Disk: df -h /
+            String dfOutput = sshDockerExecutorService.execHostCommand(host,
+                    "df / | awk 'NR==2{gsub(\"%\",\"\",$5); printf \"%s %s %s\", $2, $3, $5}'", false)
+                    .get("output").toString().trim();
+            String[] dfParts = dfOutput.split("\\s+");
+            if (dfParts.length >= 3) {
+                result.put("diskTotalMb", dfParts[0]);
+                result.put("diskUsedMb", dfParts[1]);
+                result.put("diskPercent", Double.parseDouble(dfParts[2].replaceAll("[^0-9.]", "")));
+            } else {
+                result.put("diskPercent", host.getDiskUsedPercent());
+            }
+
+            // Update stored values in DB
+            host.setCpuUsagePercent(cpuPercent);
+            if (result.containsKey("memPercent")) {
+                host.setMemoryUsedPercent(((Number) result.get("memPercent")).doubleValue());
+            }
+            vmHostService.save(host);
+
+        } catch (Exception e) {
+            log.warn("Failed to fetch SSH metrics for host {}: {}", host.getIp(), e.getMessage());
+            result.put("cpuPercent", host.getCpuUsagePercent());
+            result.put("memPercent", host.getMemoryUsedPercent());
+            result.put("diskPercent", host.getDiskUsedPercent());
+            result.put("memTotalMb", host.getMemoryGb() * 1024L);
+            result.put("memUsedMb", (long)(host.getMemoryGb() * 1024 * host.getMemoryUsedPercent() / 100));
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
+
+    private Map<String, Object> getMetricsViaDockerSocket(VmHost host) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("vmId", host.getId());
+        result.put("source", "docker_socket");
+
+        try {
+            DockerClient client = dockerClientFactory.getClientForHost(host);
+            Info info = client.infoCmd().exec();
+
+            // Aggregate CPU/memory across all running containers via stats
+            List<Container> running = client.listContainersCmd()
+                    .withStatusFilter(Collections.singletonList("running"))
+                    .exec();
+
+            double totalCpu = 0;
+            long totalMemUsed = 0;
+            long totalMemLimit = 0;
+
+            for (Container c : running) {
+                try {
+                    AtomicReference<Statistics> statsRef = new AtomicReference<>();
+                    CountDownLatch latch = new CountDownLatch(1);
+
+                    client.statsCmd(c.getId()).withNoStream(true)
+                            .exec(new ResultCallback<Statistics>() {
+                                @Override public void onStart(Closeable closeable) {}
+                                @Override public void onNext(Statistics stats) {
+                                    statsRef.set(stats);
+                                    latch.countDown();
+                                }
+                                @Override public void onError(Throwable t) { latch.countDown(); }
+                                @Override public void onComplete() { latch.countDown(); }
+                                @Override public void close() {}
+                            });
+
+                    latch.await(5L, TimeUnit.SECONDS);
+                    Statistics stats = statsRef.get();
+
+                    if (stats != null && stats.getCpuStats() != null && stats.getPreCpuStats() != null) {
+                        Long cpuDelta = stats.getCpuStats().getCpuUsage() != null && stats.getPreCpuStats().getCpuUsage() != null
+                                ? stats.getCpuStats().getCpuUsage().getTotalUsage() - stats.getPreCpuStats().getCpuUsage().getTotalUsage()
+                                : 0L;
+                        Long sysDelta = stats.getCpuStats().getSystemCpuUsage() != null && stats.getPreCpuStats().getSystemCpuUsage() != null
+                                ? stats.getCpuStats().getSystemCpuUsage() - stats.getPreCpuStats().getSystemCpuUsage()
+                                : 0L;
+                        int numCpus = stats.getCpuStats().getOnlineCpus() != null ? stats.getCpuStats().getOnlineCpus() : 1;
+                        if (sysDelta > 0 && cpuDelta >= 0) {
+                            totalCpu += (cpuDelta * 100.0 / sysDelta) * numCpus;
+                        }
+                        if (stats.getMemoryStats() != null) {
+                            Long usage = stats.getMemoryStats().getUsage();
+                            Long limit = stats.getMemoryStats().getLimit();
+                            if (usage != null) totalMemUsed += usage;
+                            if (limit != null && limit > 0 && limit < Long.MAX_VALUE) totalMemLimit = Math.max(totalMemLimit, limit);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Fallback: use Docker info for total memory
+            long systemMemBytes = info.getMemTotal() != null ? info.getMemTotal() : (long) host.getMemoryGb() * 1024 * 1024 * 1024;
+            int numCpus = info.getNCPU() != null ? info.getNCPU() : host.getCpuCores();
+            double cpuPercent = Math.min(100, totalCpu);
+            double memPercent = systemMemBytes > 0 ? (totalMemUsed * 100.0 / systemMemBytes) : 0;
+            long memTotalMb = systemMemBytes / (1024 * 1024);
+            long memUsedMb = totalMemUsed / (1024 * 1024);
+
+            result.put("cpuPercent", Math.round(cpuPercent * 10.0) / 10.0);
+            result.put("memPercent", Math.round(memPercent * 10.0) / 10.0);
+            result.put("memTotalMb", memTotalMb);
+            result.put("memUsedMb", memUsedMb);
+            result.put("diskPercent", host.getDiskUsedPercent());
+            result.put("cpuCores", numCpus);
+
+            host.setCpuUsagePercent(cpuPercent);
+            host.setMemoryUsedPercent(memPercent);
+            vmHostService.save(host);
+
+        } catch (Exception e) {
+            log.warn("Failed to fetch Docker socket metrics for host {}: {}", host.getIp(), e.getMessage());
+            result.put("cpuPercent", host.getCpuUsagePercent());
+            result.put("memPercent", host.getMemoryUsedPercent());
+            result.put("diskPercent", host.getDiskUsedPercent());
+            result.put("memTotalMb", host.getMemoryGb() * 1024L);
+            result.put("memUsedMb", (long)(host.getMemoryGb() * 1024 * host.getMemoryUsedPercent() / 100));
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
 }

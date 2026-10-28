@@ -4,7 +4,6 @@ import {
   Plus, 
   RotateCw, 
   Trash2, 
-  ExternalLink, 
   ShieldCheck, 
   Key, 
   Lock, 
@@ -15,10 +14,14 @@ import {
   CheckCircle2,
   AlertTriangle,
   Globe,
-  Edit3
+  Edit3,
+  Activity,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { VMHost, AuthType } from '../../types';
+import { VmMetricsPanel } from './VmMetricsPanel';
 
 export const VmHostManager: React.FC = () => {
   const { 
@@ -29,10 +32,16 @@ export const VmHostManager: React.FC = () => {
     setIsAddVmModalOpen, 
     openEditVmModal,
     deleteVm, 
-    testVmConnection 
+    testVmConnection,
+    isBackendConnected,
   } = useFleet();
 
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [expandedMetricsId, setExpandedMetricsId] = useState<string | null>(null);
+
+  const toggleMetrics = (id: string) => {
+    setExpandedMetricsId((prev) => (prev === id ? null : id));
+  };
 
   const handleTestConnection = async (id: string) => {
     setTestingId(id);
@@ -206,6 +215,13 @@ export const VmHostManager: React.FC = () => {
                 ))}
               </div>
 
+              {/* Real-time Metrics (expandable) */}
+              {expandedMetricsId === vm.id && (
+                <div className="border-t border-slate-800/60 pt-3 mt-1">
+                  <VmMetricsPanel vm={vm} isBackendConnected={isBackendConnected} />
+                </div>
+              )}
+
               {/* Actions Footer */}
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
                 <button
@@ -220,6 +236,22 @@ export const VmHostManager: React.FC = () => {
                 </button>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleMetrics(vm.id)}
+                    className={`px-2.5 py-1 rounded border flex items-center gap-1 transition-colors text-xs ${
+                      expandedMetricsId === vm.id
+                        ? 'bg-cyan-950/60 border-cyan-700/50 text-cyan-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750 hover:text-cyan-300'
+                    }`}
+                    title="Toggle real-time CPU & memory metrics"
+                  >
+                    <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Live Metrics</span>
+                    {expandedMetricsId === vm.id
+                      ? <ChevronUp className="w-3 h-3" />
+                      : <ChevronDown className="w-3 h-3" />}
+                  </button>
+
                   <button
                     onClick={() => openEditVmModal(vm)}
                     className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors text-xs"

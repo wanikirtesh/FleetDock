@@ -69,6 +69,11 @@ public class VmHostController {
         return ResponseEntity.ok(dockerEngineService.execHostCommand(id, command, useSudo));
     }
 
+    @GetMapping("/{id}/metrics")
+    public ResponseEntity<Map<String, Object>> getHostMetrics(@PathVariable String id) {
+        return ResponseEntity.ok(dockerEngineService.getHostMetrics(id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteHost(@PathVariable String id) {
         vmHostService.deleteHost(id);
