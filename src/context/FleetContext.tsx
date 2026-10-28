@@ -25,8 +25,8 @@ interface FleetContextType {
   scopeLabel: string;
   applyHostMetrics: (metric: any) => void;
   activeVm: VMHost | undefined;
-  activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot';
-  setActiveTab: (tab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot') => void;
+  activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings';
+  setActiveTab: (tab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings') => void;
   selectedContainerForLogs: Container | null;
   setSelectedContainerForLogs: (c: Container | null) => void;
   selectedContainerForShell: Container | null;
@@ -175,7 +175,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   const [selectedVmId, setSelectedVmId] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings'>('overview');
 
   const [selectedContainerForLogs, setSelectedContainerForLogs] = useState<Container | null>(null);
   const [selectedContainerForShell, setSelectedContainerForShell] = useState<Container | null>(null);

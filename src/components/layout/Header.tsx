@@ -99,19 +99,19 @@ export const Header: React.FC = () => {
             </select>
           </div>
 
-          {/* Spring Boot Live DB Status Badge */}
+          {/* Backend status badge */}
           <button
-            onClick={() => setActiveTab('spring_boot')}
+            onClick={() => setActiveTab('settings')}
             className={`hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono border transition-colors ${
               isBackendConnected
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 hdr-badge-connected'
                 : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20 hdr-badge-disconnected'
             }`}
-            title="Click to view Spring Boot backend connection details"
+            title="Backend connection settings"
           >
             <Database className="w-3.5 h-3.5" />
             <span>
-              {isBackendConnected ? 'Spring Boot DB Connected' : 'Demo / Standalone'}
+              {isBackendConnected ? 'Backend Connected' : 'Offline (demo)'}
             </span>
           </button>
         </div>
@@ -124,19 +124,9 @@ export const Header: React.FC = () => {
             onClick={() => fetchFromBackend()}
             disabled={isSyncing}
             className="btn-icon-muted p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
-            title="Sync latest data from Spring Boot REST API"
+            title="Sync latest data from the backend"
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-cyan-400' : ''}`} />
-          </button>
-
-          {/* Spring Boot Java Code Center */}
-          <button
-            onClick={() => setActiveTab('spring_boot')}
-            className="btn-ghost-indigo flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-colors shadow-sm"
-            title="Explore Spring Boot 3 Java Backend Architecture & Code"
-          >
-            <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="hidden sm:inline">Spring Boot API</span>
           </button>
 
           {/* Add Container */}

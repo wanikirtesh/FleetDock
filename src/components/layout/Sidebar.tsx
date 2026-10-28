@@ -28,6 +28,7 @@ export const Sidebar: React.FC = () => {
     selectedVmId, 
     isInScope,
     setSelectedVmId,
+    isBackendConnected,
     testVmConnection 
   } = useFleet();
 
@@ -80,10 +81,10 @@ export const Sidebar: React.FC = () => {
       badgeColor: 'sidebar-badge-slate bg-slate-700 text-slate-300',
     },
     {
-      id: 'spring_boot',
-      label: 'Spring Boot Java Backend',
+      id: 'settings',
+      label: 'Backend Settings',
       icon: Cpu,
-      badge: 'REST & SSE',
+      badge: isBackendConnected ? 'Online' : 'Offline',
       badgeColor: 'sidebar-badge-amber bg-amber-500/20 text-amber-300 border border-amber-500/30',
     },
   ];
@@ -212,18 +213,17 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* Spring Boot Engine Info Badge at bottom */}
+      {/* Backend info at bottom */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/40 text-[11px] text-slate-400">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between">
           <span className="text-slate-300 font-semibold flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
-            Backend Protocol
+            Backend
           </span>
-          <span className="text-emerald-400 font-mono text-[10px]">SPRING BOOT 3</span>
+          <span className={`font-mono text-[10px] ${isBackendConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {isBackendConnected ? 'CONNECTED' : 'OFFLINE'}
+          </span>
         </div>
-        <p className="text-[10px] text-slate-500 leading-normal">
-          Docker-Java 3.4.0 Engine client with secure SSH tunneling & TLS socket adapters.
-        </p>
       </div>
 
     </aside>

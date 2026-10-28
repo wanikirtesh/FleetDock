@@ -14,7 +14,7 @@ import { ContainerList } from './components/containers/ContainerList';
 import { ComposeExplorer } from './components/compose/ComposeExplorer';
 import { VmHostManager } from './components/vms/VmHostManager';
 import { StorageNetworkView } from './components/storage/StorageNetworkView';
-import { SpringBootViewer } from './components/springboot/SpringBootViewer';
+import { BackendSettings } from './components/settings/BackendSettings';
 import { ContainerLogsModal } from './components/containers/ContainerLogsModal';
 import { ContainerShellModal } from './components/containers/ContainerShellModal';
 import { ContainerInspectModal } from './components/containers/ContainerInspectModal';
@@ -38,7 +38,7 @@ const DashboardContent: React.FC = () => {
     { id: 'containers', label: 'Containers', icon: Boxes },
     { id: 'compose', label: 'Compose', icon: FileCode2 },
     { id: 'vms', label: 'VM Hosts', icon: Server },
-    { id: 'spring_boot', label: 'Spring Boot', icon: Cpu },
+    { id: 'settings', label: 'Settings', icon: Cpu },
   ];
 
   return (
@@ -58,7 +58,7 @@ const DashboardContent: React.FC = () => {
           {activeTab === 'compose' && <ComposeExplorer />}
           {activeTab === 'vms' && <VmHostManager />}
           {activeTab === 'storage_network' && <StorageNetworkView />}
-          {activeTab === 'spring_boot' && <SpringBootViewer />}
+          {activeTab === 'settings' && <BackendSettings />}
         </main>
       </div>
 

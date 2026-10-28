@@ -160,7 +160,7 @@ export const ClusterOverview: React.FC = () => {
               <span>Registered VM Nodes & Docker Daemons</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Remote hosts managed by the Spring Boot backend via SSH tunnels and Docker TCP/TLS endpoints.
+              Remote hosts managed by the FleetDock backend via SSH tunnels and Docker TCP/TLS endpoints.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -179,10 +179,10 @@ export const ClusterOverview: React.FC = () => {
           <div className="p-8 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
             <Server className="w-10 h-10 mx-auto text-cyan-400 opacity-60" />
             <h3 className="text-base font-semibold text-slate-200">
-              Spring Boot Database is Empty (0 Hosts)
+              No Hosts Registered (0 Hosts)
             </h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Your Spring Boot backend is connected. You can register your own VM host or seed the database with initial cluster nodes.
+              Your backend is connected. You can register your own VM host or seed the database with initial cluster nodes.
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
@@ -343,21 +343,21 @@ export const ClusterOverview: React.FC = () => {
       {/* System Highlights / Quick Navigation Banner */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Banner 1: Spring Boot Engine */}
+        {/* Banner 1: Register VM */}
         <div 
-          onClick={() => setActiveTab('spring_boot')}
+          onClick={() => setIsAddVmModalOpen(true)}
           className="p-4 rounded-xl bg-gradient-to-br from-indigo-950/60 to-slate-900 border border-indigo-900/50 hover:border-indigo-700/60 cursor-pointer transition-all space-y-2"
         >
           <div className="flex items-center gap-2 text-indigo-400 font-semibold text-sm">
             <Cpu className="w-4 h-4" />
-            <span>Spring Boot 3 Java Engine</span>
+            <span>Register a VM</span>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Examines the Java controller, encrypted host credentials vault, and docker-java daemon proxy code.
+            Add a host over SSH or Docker API; OS, CPU, memory and disk are detected automatically.
           </p>
           <div className="text-xs text-indigo-300 font-medium flex items-center gap-1 pt-1">
-            <span>Inspect Spring Boot Source</span>
-            <ExternalLink className="w-3 h-3" />
+            <span>Add VM</span>
+            <Plus className="w-3 h-3" />
           </div>
         </div>
 
