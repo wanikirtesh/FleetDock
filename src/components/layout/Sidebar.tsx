@@ -57,35 +57,35 @@ export const Sidebar: React.FC = () => {
       label: 'Containers',
       icon: Boxes,
       badge: `${runningContainersCount}/${filteredContainers.length}`,
-      badgeColor: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
+      badgeColor: 'sidebar-badge-emerald bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
     },
     {
       id: 'compose',
       label: 'Compose & Variables',
       icon: FileCode2,
       badge: selectedVmId === 'all' ? `${composeStacks.length}` : `${composeStacks.filter(s => s.vmId === selectedVmId).length}`,
-      badgeColor: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
+      badgeColor: 'sidebar-badge-cyan bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
     },
     {
       id: 'vms',
       label: 'VM Hosts & Auth',
       icon: Server,
       badge: `${vms.length} Nodes`,
-      badgeColor: 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30',
+      badgeColor: 'sidebar-badge-indigo bg-indigo-500/20 text-indigo-400 border border-indigo-500/30',
     },
     {
       id: 'storage_network',
       label: 'Volumes & Networks',
       icon: HardDrive,
       badge: `${volumes.length} vols`,
-      badgeColor: 'bg-slate-700 text-slate-300',
+      badgeColor: 'sidebar-badge-slate bg-slate-700 text-slate-300',
     },
     {
       id: 'spring_boot',
       label: 'Spring Boot Java Backend',
       icon: Cpu,
       badge: 'REST & SSE',
-      badgeColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+      badgeColor: 'sidebar-badge-amber bg-amber-500/20 text-amber-300 border border-amber-500/30',
     },
   ];
 
@@ -108,7 +108,7 @@ export const Sidebar: React.FC = () => {
                   onClick={() => setActiveTab(item.id as any)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/5 font-semibold'
+                      ? 'nav-item-active bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/5 font-semibold'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >

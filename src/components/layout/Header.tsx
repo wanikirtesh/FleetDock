@@ -39,15 +39,15 @@ export const Header: React.FC = () => {
         
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
+          <div className="fd-logo-icon w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
             <Boxes className="w-5 h-5 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+              <span className="fd-brand-text font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
                 FleetDock
               </span>
-              <span className="px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded">
+              <span className="sidebar-badge-emerald px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded">
                 v2.5
               </span>
             </div>
@@ -83,8 +83,8 @@ export const Header: React.FC = () => {
             onClick={() => setActiveTab('spring_boot')}
             className={`hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono border transition-colors ${
               isBackendConnected
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 hdr-badge-connected'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20 hdr-badge-disconnected'
             }`}
             title="Click to view Spring Boot backend connection details"
           >
@@ -102,7 +102,7 @@ export const Header: React.FC = () => {
           <button
             onClick={() => fetchFromBackend()}
             disabled={isSyncing}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
+            className="btn-icon-muted p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
             title="Sync latest data from Spring Boot REST API"
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-cyan-400' : ''}`} />
@@ -111,7 +111,7 @@ export const Header: React.FC = () => {
           {/* Spring Boot Java Code Center */}
           <button
             onClick={() => setActiveTab('spring_boot')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-colors shadow-sm"
+            className="btn-ghost-indigo flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-colors shadow-sm"
             title="Explore Spring Boot 3 Java Backend Architecture & Code"
           >
             <Code2 className="w-3.5 h-3.5 text-indigo-400" />
@@ -121,7 +121,7 @@ export const Header: React.FC = () => {
           {/* Add Container */}
           <button
             onClick={() => setIsDeployModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-sm shadow-emerald-900/30"
+            className="btn-primary-emerald flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-sm shadow-emerald-900/30"
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Deploy Container</span>
@@ -130,7 +130,7 @@ export const Header: React.FC = () => {
           {/* Add VM */}
           <button
             onClick={() => setIsAddVmModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors shadow-sm shadow-cyan-900/30"
+            className="btn-primary-cyan flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors shadow-sm shadow-cyan-900/30"
           >
             <Server className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Register VM</span>
@@ -143,7 +143,7 @@ export const Header: React.FC = () => {
           <button
             onClick={resetToSampleData}
             title="Reset to Sample Demo State"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="btn-icon-muted p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
           >
             <RotateCcw className="w-4 h-4" />
           </button>

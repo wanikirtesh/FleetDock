@@ -91,12 +91,202 @@
   --color-purple-400: #6D28D9;
   --color-purple-500: #5B21B6;
 
-  /* ── White / Black inversion for overlays ── */
-  --color-white: #18191A;
-  --color-black: #F8F9F9;
+  /* ── Violet (for metrics panel) ── */
+  --color-violet-400: #6D28D9;
+  --color-violet-500: #5B21B6;
 }
 
-/* ── Custom scrollbar styling ── */
+/* =============================================================
+   LIGHT MODE — Component-level refinements
+   These target specific patterns that the slate inversion alone
+   cannot fix (hardcoded alpha blends, gradient text, etc.)
+   ============================================================= */
+
+/* ── Logo / brand wordmark ── */
+[data-theme="light"] .fd-brand-text {
+  background-image: linear-gradient(to right, #0f172a, #1e3a5f, #0B6882);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Logo icon wrapper: softer glow on light ── */
+[data-theme="light"] .fd-logo-icon {
+  box-shadow: 0 4px 14px rgba(11,104,130,0.25);
+  ring-color: rgba(0,0,0,0.08);
+}
+
+/* ── ThemeToggle track: visible in light mode ── */
+[data-theme="light"] #theme-toggle-btn {
+  background-color: #e2e8f0;
+  border-color: #cbd5e1;
+}
+[data-theme="light"] #theme-toggle-btn:hover {
+  border-color: #94a3b8;
+}
+
+/* ── Sidebar nav badges ──
+   Alpha blends like bg-emerald-500/20 look washed-out on light.
+   We punch them up with higher contrast. */
+[data-theme="light"] .sidebar-badge-emerald {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+[data-theme="light"] .sidebar-badge-cyan {
+  background-color: #cffafe;
+  color: #164e63;
+  border-color: #67e8f9;
+}
+[data-theme="light"] .sidebar-badge-indigo {
+  background-color: #e0e7ff;
+  color: #3730a3;
+  border-color: #a5b4fc;
+}
+[data-theme="light"] .sidebar-badge-amber {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+[data-theme="light"] .sidebar-badge-slate {
+  background-color: #f1f5f9;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+/* ── Active nav item tint ── */
+[data-theme="light"] .nav-item-active {
+  background-color: #cffafe !important;
+  border-color: #0B6882 !important;
+  color: #0B6882 !important;
+}
+[data-theme="light"] .nav-item-active svg {
+  color: #0B6882 !important;
+}
+
+/* ── Header action buttons ── */
+/* Cyan primary "Register VM" */
+[data-theme="light"] .btn-primary-cyan {
+  background-color: #0B6882;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(11,104,130,0.35);
+}
+[data-theme="light"] .btn-primary-cyan:hover {
+  background-color: #075E75;
+}
+
+/* Emerald "Deploy Container" */
+[data-theme="light"] .btn-primary-emerald {
+  background-color: #047857;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(4,120,87,0.30);
+}
+[data-theme="light"] .btn-primary-emerald:hover {
+  background-color: #055C44;
+}
+
+/* Indigo ghost "Spring Boot API" */
+[data-theme="light"] .btn-ghost-indigo {
+  background-color: #e0e7ff;
+  color: #3730a3;
+  border-color: #a5b4fc;
+}
+[data-theme="light"] .btn-ghost-indigo:hover {
+  background-color: #c7d2fe;
+}
+
+/* Muted icon buttons (Refresh, Reset) */
+[data-theme="light"] .btn-icon-muted {
+  color: #475569;
+}
+[data-theme="light"] .btn-icon-muted:hover {
+  background-color: #e2e8f0;
+  color: #1e293b;
+}
+
+/* ── Header DB status badge ── */
+[data-theme="light"] .hdr-badge-connected {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+[data-theme="light"] .hdr-badge-disconnected {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+/* ── VM card environment badges ── */
+[data-theme="light"] .env-badge-production {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+[data-theme="light"] .env-badge-staging {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+[data-theme="light"] .env-badge-edge {
+  background-color: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+[data-theme="light"] .env-badge-development {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+
+/* ── Online status chip ── */
+[data-theme="light"] .status-online-chip {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+
+/* ── Card secondary buttons (Edit, Test, etc.) ── */
+[data-theme="light"] .btn-card-secondary {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+[data-theme="light"] .btn-card-secondary:hover {
+  background-color: #e2e8f0;
+  color: #0B6882;
+}
+
+/* ── Live Metrics active toggle ── */
+[data-theme="light"] .btn-metrics-active {
+  background-color: #cffafe !important;
+  border-color: #0B6882 !important;
+  color: #0B6882 !important;
+}
+
+/* ── Ping/latency chip ── */
+[data-theme="light"] .latency-chip {
+  background-color: #cffafe;
+  color: #164e63;
+  border-color: #0B6882;
+}
+
+/* ── Metrics panel live badge ── */
+[data-theme="light"] .metrics-live-badge {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+[data-theme="light"] .metrics-warn-badge {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+[data-theme="light"] .metrics-error-badge {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: var(--color-slate-900, #0f172a); }
 ::-webkit-scrollbar-thumb  { background: var(--color-slate-700, #334155); border-radius: 3px; }
