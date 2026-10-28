@@ -434,6 +434,72 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [selectedVmId, isBackendConnected]);
 
+  const registeredVmIds = vms.map((vm) => vm.id).join(',');
+
+  useEffect(() => {
+    if (!isBackendConnected || dataSource !== 'spring_boot' || !registeredVmIds) return;
+
+    const hostIds = registeredVmIds.split(',');
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const refreshMetrics = async () => {
+      const metrics = await Promise.all(hostIds.map(async (id) => {
+        try {
+          const data = await api.getHostMetrics(id);
+          if (data.error) {
+            console.warn(`Could not refresh metrics for host ${id}:`, data.error);
+            return null;
+          }
+          return data;
+        } catch (err) {
+          console.warn(`Could not refresh metrics for host ${id}:`, err);
+          return null;
+        }
+      }));
+
+      if (cancelled) return;
+
+      const metricsByHostId = new Map(
+        metrics.filter((metric) => metric !== null).map((metric) => [metric.vmId, metric])
+      );
+      if (metricsByHostId.size > 0) {
+        setVms((current) => {
+          const updated = current.map((vm) => {
+            const metric = metricsByHostId.get(vm.id);
+            if (!metric) return vm;
+
+            return {
+              ...vm,
+              metricsSource: metric.source,
+              cpuUsagePercent: metric.cpuPercent,
+              memoryUsedPercent: metric.memPercent,
+              cpuCores: metric.cpuCores ?? vm.cpuCores,
+              memoryGb: metric.memTotalMb > 0 ? Number((metric.memTotalMb / 1024).toFixed(1)) : vm.memoryGb,
+              diskGb: metric.diskTotalMb && metric.diskTotalMb > 0
+                ? Number((metric.diskTotalMb / 1024).toFixed(1))
+                : vm.diskGb,
+              diskUsedPercent: metric.diskAvailable && typeof metric.diskPercent === 'number'
+                ? metric.diskPercent
+                : vm.diskUsedPercent,
+              diskMetricsAvailable: metric.diskAvailable ?? typeof metric.diskPercent === 'number',
+            };
+          });
+          localStorage.setItem('fleetdock_vms', JSON.stringify(updated));
+          return updated;
+        });
+      }
+
+      if (!cancelled) timeout = setTimeout(refreshMetrics, 10000);
+    };
+
+    void refreshMetrics();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [isBackendConnected, dataSource, registeredVmIds]);
+
   const activeVm = useMemo(() => {
     return vms.find((v) => v.id === selectedVmId);
   }, [vms, selectedVmId]);
@@ -453,13 +519,15 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const activeVmList = selectedVmId === 'all' ? vms : vms.filter((v) => v.id === selectedVmId);
     const totalMemoryGb = activeVmList.reduce((acc, v) => acc + v.memoryGb, 0);
-    const avgCpu = activeVmList.length > 0 
-      ? activeVmList.reduce((acc, v) => acc + v.cpuUsagePercent, 0) / activeVmList.length 
+    const totalCpuCores = activeVmList.reduce((acc, v) => acc + v.cpuCores, 0);
+    const avgCpu = totalCpuCores > 0
+      ? activeVmList.reduce((acc, v) => acc + v.cpuUsagePercent * v.cpuCores, 0) / totalCpuCores
       : 0;
-    const avgMem = activeVmList.length > 0 
-      ? activeVmList.reduce((acc, v) => acc + v.memoryUsedPercent, 0) / activeVmList.length 
-      : 0;
-    const usedMemoryGb = (totalMemoryGb * avgMem) / 100;
+    const usedMemoryGb = activeVmList.reduce(
+      (acc, v) => acc + (v.memoryGb * v.memoryUsedPercent) / 100,
+      0
+    );
+    const avgMem = totalMemoryGb > 0 ? (usedMemoryGb / totalMemoryGb) * 100 : 0;
 
     return {
       totalVms,
@@ -484,11 +552,6 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           port: newVm.port,
           authType: newVm.authType.toUpperCase(),
           environment: newVm.environment,
-          os: newVm.os,
-          arch: newVm.arch,
-          cpuCores: newVm.cpuCores,
-          memoryGb: newVm.memoryGb,
-          diskGb: newVm.diskGb,
           username: newVm.authPayload?.username,
           privateKey: newVm.authPayload?.privateKey,
           password: newVm.authPayload?.password,
@@ -551,6 +614,11 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       status: 'online',
                       pingMs: pingRes.latencyMs || v.pingMs,
                       dockerVersion: pingRes.dockerVersion ? `Docker Engine ${pingRes.dockerVersion}` : v.dockerVersion,
+                      os: pingRes.os || v.os,
+                      arch: pingRes.arch || v.arch,
+                      cpuCores: pingRes.cpuCores || v.cpuCores,
+                      memoryGb: pingRes.memoryGb || v.memoryGb,
+                      diskGb: pingRes.diskGb || v.diskGb,
                     }
                   : v
               )
@@ -674,9 +742,9 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 environment: updated.environment || updates.environment || v.environment,
                 os: updated.os || updates.os || v.os,
                 arch: updated.arch || updates.arch || v.arch,
-                cpuCores: updated.cpuCores || updates.cpuCores || v.cpuCores,
-                memoryGb: updated.memoryGb || updates.memoryGb || v.memoryGb,
-                diskGb: updated.diskGb || updates.diskGb || v.diskGb,
+                cpuCores: updated.cpuCores || v.cpuCores,
+                memoryGb: updated.memoryGb || v.memoryGb,
+                diskGb: updated.diskGb || v.diskGb,
                 tags: updates.tags || v.tags,
                 authType: (updated.authType ? (updated.authType.toLowerCase() as any) : updates.authType) || v.authType,
                 authPayload: {
@@ -774,6 +842,11 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 pingMs: latency,
                 dockerVersion: res.dockerVersion || v.dockerVersion,
                 apiVersion: res.apiVersion || v.apiVersion,
+                os: res.os || v.os,
+                arch: res.arch || v.arch,
+                cpuCores: res.cpuCores || v.cpuCores,
+                memoryGb: res.memoryGb || v.memoryGb,
+                diskGb: res.diskGb || v.diskGb,
                 lastChecked: 'Just now',
               }
             : v

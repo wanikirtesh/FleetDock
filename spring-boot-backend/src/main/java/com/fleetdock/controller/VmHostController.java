@@ -35,6 +35,7 @@ public class VmHostController {
     @PostMapping("/register")
     public ResponseEntity<VmHost> registerVm(@Valid @RequestBody VmRegistrationRequest request) {
         VmHost created = vmHostService.registerHost(request);
+        created = dockerEngineService.collectHostSpecs(created.getId());
         return new ResponseEntity<>(created, HttpStatus.CREATED);
     }
 
@@ -42,12 +43,22 @@ public class VmHostController {
     public ResponseEntity<VmHost> updateVm(
             @PathVariable String id,
             @Valid @RequestBody VmRegistrationRequest request) {
-        return ResponseEntity.ok(vmHostService.updateHost(id, request));
+        vmHostService.updateHost(id, request);
+        return ResponseEntity.ok(dockerEngineService.collectHostSpecs(id));
     }
 
     @PostMapping("/{id}/ping")
     public ResponseEntity<Map<String, Object>> pingHost(@PathVariable String id) {
-        return ResponseEntity.ok(dockerEngineService.testConnection(id));
+        Map<String, Object> result = new java.util.HashMap<>(dockerEngineService.testConnection(id));
+        if ("online".equals(result.get("status"))) {
+            VmHost host = dockerEngineService.collectHostSpecs(id);
+            result.put("os", host.getOs());
+            result.put("arch", host.getArch());
+            result.put("cpuCores", host.getCpuCores());
+            result.put("memoryGb", host.getMemoryGb());
+            result.put("diskGb", host.getDiskGb());
+        }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/{id}/volumes")

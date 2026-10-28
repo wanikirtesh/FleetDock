@@ -6,9 +6,12 @@ import { VMHost } from '../../types';
 interface MetricsSnapshot {
   cpuPercent: number;
   memPercent: number;
-  diskPercent: number;
+  diskPercent: number | null;
   memTotalMb: number;
   memUsedMb: number;
+  diskTotalMb: number;
+  diskUsedMb: number;
+  source: string;
   timestamp: number;
 }
 
@@ -93,13 +96,13 @@ function MetricCard({
 }: {
   label: string;
   icon: React.ReactNode;
-  value: number;
+  value: number | null;
   history: number[];
   color: string;
   sub?: string;
 }) {
-  const isHigh = value >= 85;
-  const isMid = value >= 60 && value < 85;
+  const isHigh = value !== null && value >= 85;
+  const isMid = value !== null && value >= 60 && value < 85;
   const barColor = isHigh ? '#f87171' : isMid ? '#fb923c' : color;
 
   return (
@@ -132,16 +135,16 @@ function MetricCard({
 
         <div className="flex items-end gap-1">
           <span className="text-3xl font-black tabular-nums leading-none" style={{ color: barColor }}>
-            {value.toFixed(1)}
+            {value === null ? '--' : value.toFixed(1)}
           </span>
-          <span className="text-sm font-semibold text-slate-400 mb-0.5">%</span>
+          {value !== null && <span className="text-sm font-semibold text-slate-400 mb-0.5">%</span>}
         </div>
 
         <div className="w-full bg-slate-800/70 rounded-full h-1.5 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-700 ease-out"
             style={{
-              width: `${Math.min(100, value)}%`,
+              width: `${value === null ? 0 : Math.min(100, value)}%`,
               background: barColor,
               boxShadow: `0 0 6px ${barColor}80`,
             }}
@@ -169,13 +172,24 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
     try {
       const data = await api.getHostMetrics(vm.id);
       if (!mountedRef.current) return;
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
 
       const snap: MetricsSnapshot = {
         cpuPercent: typeof data.cpuPercent === 'number' ? data.cpuPercent : vm.cpuUsagePercent,
         memPercent: typeof data.memPercent === 'number' ? data.memPercent : vm.memoryUsedPercent,
-        diskPercent: typeof data.diskPercent === 'number' ? data.diskPercent : vm.diskUsedPercent,
+        diskPercent: data.diskAvailable === false
+          ? null
+          : typeof data.diskPercent === 'number' ? data.diskPercent : vm.diskUsedPercent,
         memTotalMb: typeof data.memTotalMb === 'number' ? data.memTotalMb : vm.memoryGb * 1024,
         memUsedMb: typeof data.memUsedMb === 'number' ? data.memUsedMb : 0,
+        diskTotalMb: typeof data.diskTotalMb === 'number' ? data.diskTotalMb : vm.diskGb * 1024,
+        diskUsedMb: typeof data.diskUsedMb === 'number'
+          ? data.diskUsedMb
+          : vm.diskGb * 1024 * vm.diskUsedPercent / 100,
+        source: data.source,
         timestamp: Date.now(),
       };
 
@@ -193,36 +207,59 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
   useEffect(() => {
     mountedRef.current = true;
 
+    if (isBackendConnected) {
+      setLatest(null);
+      setHistory([]);
+      setError(null);
+      fetchMetrics();
+      intervalRef.current = setInterval(fetchMetrics, POLL_INTERVAL_MS);
+
+      return () => {
+        mountedRef.current = false;
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      };
+    }
+
     const seedSnap: MetricsSnapshot = {
       cpuPercent: vm.cpuUsagePercent,
       memPercent: vm.memoryUsedPercent,
       diskPercent: vm.diskUsedPercent,
       memTotalMb: vm.memoryGb * 1024,
       memUsedMb: Math.round((vm.memoryGb * 1024 * vm.memoryUsedPercent) / 100),
+      diskTotalMb: vm.diskGb * 1024,
+      diskUsedMb: Math.round((vm.diskGb * 1024 * vm.diskUsedPercent) / 100),
+      source: vm.metricsSource || 'host',
       timestamp: Date.now(),
     };
     setLatest(seedSnap);
     setHistory([seedSnap]);
     setError(null);
 
-    fetchMetrics();
-    intervalRef.current = setInterval(fetchMetrics, POLL_INTERVAL_MS);
-
     return () => {
       mountedRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [vm.id]);
+  }, [vm.id, isBackendConnected]);
 
   const cpuHistory = history.map((s) => s.cpuPercent);
   const memHistory = history.map((s) => s.memPercent);
-  const diskHistory = history.map((s) => s.diskPercent);
+  const diskHistory = history
+    .map((s) => s.diskPercent)
+    .filter((value): value is number => value !== null);
 
-  const cpu = latest?.cpuPercent ?? vm.cpuUsagePercent;
-  const mem = latest?.memPercent ?? vm.memoryUsedPercent;
-  const disk = latest?.diskPercent ?? vm.diskUsedPercent;
+  const cpu = latest?.cpuPercent ?? (isBackendConnected ? null : vm.cpuUsagePercent);
+  const mem = latest?.memPercent ?? (isBackendConnected ? null : vm.memoryUsedPercent);
+  const disk = latest
+    ? latest.diskPercent
+    : isBackendConnected || vm.diskMetricsAvailable === false ? null : vm.diskUsedPercent;
   const memUsedGb = ((latest?.memUsedMb ?? 0) / 1024).toFixed(1);
   const memTotalGb = ((latest?.memTotalMb ?? vm.memoryGb * 1024) / 1024).toFixed(1);
+  const diskUsedGb = ((latest?.diskUsedMb ?? 0) / 1024).toFixed(1);
+  const diskTotalGb = ((latest?.diskTotalMb ?? vm.diskGb * 1024) / 1024).toFixed(1);
+  const containerMetrics = latest?.source === 'docker_socket';
+  const memorySub = isBackendConnected && !latest
+    ? 'Metrics unavailable'
+    : `${memUsedGb} / ${memTotalGb} GB used`;
 
   return (
     <div className="space-y-3">
@@ -255,7 +292,7 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
       {/* Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <MetricCard
-          label="CPU Load"
+          label={containerMetrics ? 'Container CPU' : 'CPU Load'}
           icon={<Cpu className="w-4 h-4" />}
           value={cpu}
           history={cpuHistory}
@@ -263,20 +300,24 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
           sub={`${vm.cpuCores} vCPU${vm.cpuCores !== 1 ? 's' : ''} \u00b7 3s refresh`}
         />
         <MetricCard
-          label="Memory"
+          label={containerMetrics ? 'Container Memory' : 'Memory'}
           icon={<MemoryStick className="w-4 h-4" />}
           value={mem}
           history={memHistory}
           color="#a78bfa"
-          sub={`${memUsedGb} / ${memTotalGb} GB used`}
+          sub={memorySub}
         />
         <MetricCard
-          label="Disk I/O"
+          label="Disk Usage"
           icon={<HardDrive className="w-4 h-4" />}
           value={disk}
           history={diskHistory}
           color="#34d399"
-          sub={`${vm.diskGb} GB total capacity`}
+          sub={disk === null
+            ? containerMetrics || vm.metricsSource === 'docker_socket'
+              ? 'Unavailable through Docker API'
+              : 'Metrics unavailable'
+            : `${diskUsedGb} / ${diskTotalGb} GB used`}
         />
       </div>
 
@@ -286,7 +327,9 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
           <div className="rounded-lg border border-slate-800/60 bg-slate-900/50 p-3">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">CPU Trend</span>
-              <span className="text-[10px] font-mono text-cyan-400">{cpu.toFixed(1)}%</span>
+              <span className="text-[10px] font-mono text-cyan-400">
+                {cpu === null ? '--' : `${cpu.toFixed(1)}%`}
+              </span>
             </div>
             <div style={{ height: '32px' }}>
               <Sparkline values={cpuHistory} color="#22d3ee" height={32} width={240} />
@@ -295,7 +338,9 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
           <div className="rounded-lg border border-slate-800/60 bg-slate-900/50 p-3">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Memory Trend</span>
-              <span className="text-[10px] font-mono text-violet-400">{mem.toFixed(1)}%</span>
+              <span className="text-[10px] font-mono text-violet-400">
+                {mem === null ? '--' : `${mem.toFixed(1)}%`}
+              </span>
             </div>
             <div style={{ height: '32px' }}>
               <Sparkline values={memHistory} color="#a78bfa" height={32} width={240} />

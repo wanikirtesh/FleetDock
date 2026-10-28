@@ -34,6 +34,8 @@ export interface VMHost {
   memoryUsedPercent: number;
   cpuUsagePercent: number;
   diskUsedPercent: number;
+  diskMetricsAvailable?: boolean;
+  metricsSource?: string;
   pingMs: number;
   tags: string[];
   lastChecked: string;

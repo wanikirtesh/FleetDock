@@ -177,7 +177,9 @@ export const VmHostManager: React.FC = () => {
               <div className="space-y-2 text-xs">
                 <div>
                   <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>CPU Load ({vm.cpuUsagePercent}%)</span>
+                    <span>
+                      CPU Load{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''} ({vm.cpuUsagePercent}%)
+                    </span>
                     <span className="font-mono text-slate-300">{vm.cpuCores} vCPUs active</span>
                   </div>
                   <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -187,7 +189,9 @@ export const VmHostManager: React.FC = () => {
 
                 <div>
                   <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Memory Allocation ({vm.memoryUsedPercent}%)</span>
+                    <span>
+                      Memory Allocation{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''} ({vm.memoryUsedPercent}%)
+                    </span>
                     <span className="font-mono text-slate-300">{Math.round((vm.memoryGb * vm.memoryUsedPercent) / 100)} / {vm.memoryGb} GB</span>
                   </div>
                   <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -197,11 +201,18 @@ export const VmHostManager: React.FC = () => {
 
                 <div>
                   <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Disk Storage ({vm.diskUsedPercent}%)</span>
-                    <span className="font-mono text-slate-300">{Math.round((vm.diskGb * vm.diskUsedPercent) / 100)} / {vm.diskGb} GB</span>
+                    <span>Disk Storage ({vm.diskMetricsAvailable === false ? 'N/A' : `${vm.diskUsedPercent}%`})</span>
+                    <span className="font-mono text-slate-300">
+                      {vm.diskMetricsAvailable === false
+                        ? `N/A / ${vm.diskGb} GB`
+                        : `${Math.round((vm.diskGb * vm.diskUsedPercent) / 100)} / ${vm.diskGb} GB`}
+                    </span>
                   </div>
                   <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-purple-400 h-full rounded-full" style={{ width: `${vm.diskUsedPercent}%` }} />
+                    <div
+                      className="bg-purple-400 h-full rounded-full"
+                      style={{ width: `${vm.diskMetricsAvailable === false ? 0 : vm.diskUsedPercent}%` }}
+                    />
                   </div>
                 </div>
               </div>

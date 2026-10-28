@@ -36,21 +36,21 @@ export const api = {
       id: item.id,
       name: item.name,
       ip: item.ip,
-      port: item.port || 22,
+      port: item.port ?? 22,
       authType: (item.authType || 'ssh_key').toLowerCase().replace('ssh_key', 'ssh_key'),
       environment: item.environment || 'Production',
-      os: item.os || 'Ubuntu 24.04 LTS',
-      arch: item.arch || 'x86_64',
-      dockerVersion: item.dockerVersion || 'Docker Engine 27.2.1',
-      apiVersion: item.apiVersion || '1.47',
+      os: item.os || 'Unknown',
+      arch: item.arch || 'Unknown',
+      dockerVersion: item.dockerVersion || 'Unknown',
+      apiVersion: item.apiVersion || '',
       status: item.status || 'online',
-      pingMs: item.pingMs || 15,
-      cpuCores: item.cpuCores || 4,
-      memoryGb: item.memoryGb || 16,
-      diskGb: item.diskGb || 250,
-      cpuUsagePercent: item.cpuUsagePercent || 20,
-      memoryUsedPercent: item.memoryUsedPercent || 50,
-      diskUsedPercent: item.diskUsedPercent || 35,
+      pingMs: item.pingMs ?? 0,
+      cpuCores: item.cpuCores ?? 0,
+      memoryGb: item.memoryGb ?? 0,
+      diskGb: item.diskGb ?? 0,
+      cpuUsagePercent: item.cpuUsagePercent ?? 0,
+      memoryUsedPercent: item.memoryUsedPercent ?? 0,
+      diskUsedPercent: item.diskUsedPercent ?? 0,
       tags: item.tags || ['docker', 'backend'],
       lastChecked: 'Just now',
       authPayload: {
@@ -79,22 +79,22 @@ export const api = {
       id: item.id,
       name: item.name,
       ip: item.ip,
-      port: item.port || 22,
+      port: item.port ?? 22,
       authType: (item.authType || 'ssh_key').toLowerCase() as any,
       useSudo: item.useSudo ?? hostData.useSudo ?? true,
       environment: item.environment || hostData.environment || 'Production',
-      os: item.os || hostData.os || 'Ubuntu 24.04 LTS',
-      arch: item.arch || hostData.arch || 'x86_64',
-      dockerVersion: item.dockerVersion || 'Docker Engine',
-      apiVersion: item.apiVersion || '1.47',
+      os: item.os || 'Unknown',
+      arch: item.arch || 'Unknown',
+      dockerVersion: item.dockerVersion || 'Unknown',
+      apiVersion: item.apiVersion || '',
       status: item.status || 'online',
-      pingMs: item.pingMs || 0,
-      cpuCores: item.cpuCores || hostData.cpuCores || 4,
-      memoryGb: item.memoryGb || hostData.memoryGb || 16,
-      diskGb: item.diskGb || hostData.diskGb || 250,
-      cpuUsagePercent: item.cpuUsagePercent || 0,
-      memoryUsedPercent: item.memoryUsedPercent || 0,
-      diskUsedPercent: item.diskUsedPercent || 0,
+      pingMs: item.pingMs ?? 0,
+      cpuCores: item.cpuCores ?? 0,
+      memoryGb: item.memoryGb ?? 0,
+      diskGb: item.diskGb ?? 0,
+      cpuUsagePercent: item.cpuUsagePercent ?? 0,
+      memoryUsedPercent: item.memoryUsedPercent ?? 0,
+      diskUsedPercent: item.diskUsedPercent ?? 0,
       tags: hostData.tags || item.tags || ['docker'],
       lastChecked: 'Just now',
       authPayload: {
@@ -376,9 +376,12 @@ export const api = {
     source: string;
     cpuPercent: number;
     memPercent: number;
-    diskPercent: number;
+    diskPercent?: number;
     memTotalMb: number;
     memUsedMb: number;
+    diskTotalMb?: number;
+    diskUsedMb?: number;
+    diskAvailable?: boolean;
     cpuCores?: number;
     error?: string;
   }> => {

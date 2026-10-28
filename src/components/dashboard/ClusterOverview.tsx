@@ -278,7 +278,7 @@ export const ClusterOverview: React.FC = () => {
                 <div className="grid grid-cols-3 gap-3 p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 mb-3 text-xs">
                   <div>
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                      <span>CPU</span>
+                      <span>CPU{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''}</span>
                       <span className="font-mono text-slate-200">{vm.cpuUsagePercent}%</span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -291,7 +291,7 @@ export const ClusterOverview: React.FC = () => {
 
                   <div>
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                      <span>RAM</span>
+                      <span>RAM{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''}</span>
                       <span className="font-mono text-slate-200">{vm.memoryUsedPercent}%</span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -305,12 +305,14 @@ export const ClusterOverview: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                       <span>Disk</span>
-                      <span className="font-mono text-slate-200">{vm.diskUsedPercent}%</span>
+                      <span className="font-mono text-slate-200">
+                        {vm.diskMetricsAvailable === false ? 'N/A' : `${vm.diskUsedPercent}%`}
+                      </span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                       <div 
                         className="bg-purple-400 h-full rounded-full" 
-                        style={{ width: `${vm.diskUsedPercent}%` }} 
+                        style={{ width: `${vm.diskMetricsAvailable === false ? 0 : vm.diskUsedPercent}%` }}
                       />
                     </div>
                   </div>

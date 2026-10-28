@@ -516,6 +516,9 @@ export const AddVmModal: React.FC = () => {
                 />
               </div>
             </div>
+            <p className="text-[11px] text-slate-500">
+              OS, architecture, CPU, RAM and storage are auto-detected from the VM on registration; these values are only used in offline/local mode.
+            </p>
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">
