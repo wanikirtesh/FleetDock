@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
-import { useFleet } from '../../context/FleetContext';
+import { useFleet, GROUP_PREFIX } from '../../context/FleetContext';
 import { ThemeToggle } from './ThemeToggle';
 
 export const Header: React.FC = () => {
@@ -32,6 +32,9 @@ export const Header: React.FC = () => {
     fetchFromBackend,
     seedBackendDatabase
   } = useFleet();
+
+  const environmentGroups = Array.from(new Set(vms.map((v) => v.environment))).sort();
+  const tagGroups = Array.from(new Set(vms.flatMap((v) => v.tags || []))).sort();
 
   return (
     <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-slate-100">
@@ -70,11 +73,29 @@ export const Header: React.FC = () => {
               <option value="all" className="bg-slate-900 text-white">
                 🌐 All Registered VMs ({vms.length} Nodes)
               </option>
-              {vms.map((vm) => (
-                <option key={vm.id} value={vm.id} className="bg-slate-900 text-white">
-                  {vm.status === 'online' ? '🟢' : '🔴'} {vm.name} ({vm.ip}) - {vm.environment}
-                </option>
-              ))}
+              <optgroup label="Groups (Environment)" className="bg-slate-900 text-white">
+                {environmentGroups.map((env) => (
+                  <option key={env} value={`${GROUP_PREFIX}env:${env}`} className="bg-slate-900 text-white">
+                    📁 {env} ({vms.filter((v) => v.environment === env).length} VMs)
+                  </option>
+                ))}
+              </optgroup>
+              {tagGroups.length > 0 && (
+                <optgroup label="Groups (Label)" className="bg-slate-900 text-white">
+                  {tagGroups.map((tag) => (
+                    <option key={tag} value={`${GROUP_PREFIX}tag:${tag}`} className="bg-slate-900 text-white">
+                      🏷️ {tag} ({vms.filter((v) => v.tags?.includes(tag)).length} VMs)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Hosts" className="bg-slate-900 text-white">
+                {vms.map((vm) => (
+                  <option key={vm.id} value={vm.id} className="bg-slate-900 text-white">
+                    {vm.status === 'online' ? '🟢' : '🔴'} {vm.name} ({vm.ip}) - {vm.environment}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 

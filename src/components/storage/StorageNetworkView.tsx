@@ -12,16 +12,12 @@ import {
 import { useFleet } from '../../context/FleetContext';
 
 export const StorageNetworkView: React.FC = () => {
-  const { volumes, networks, vms, selectedVmId } = useFleet();
+  const { volumes, networks, vms, isInScope, scopeLabel } = useFleet();
   const [activeSubTab, setActiveSubTab] = useState<'volumes' | 'networks'>('volumes');
 
-  const filteredVolumes = selectedVmId === 'all' 
-    ? volumes 
-    : volumes.filter((v) => v.vmId === selectedVmId);
+  const filteredVolumes = volumes.filter((v) => isInScope(v.vmId));
 
-  const filteredNetworks = selectedVmId === 'all' 
-    ? networks 
-    : networks.filter((n) => n.vmId === selectedVmId);
+  const filteredNetworks = networks.filter((n) => isInScope(n.vmId));
 
   const getHostName = (vmId: string) => {
     return vms.find((v) => v.id === vmId)?.name || vmId;
@@ -59,7 +55,7 @@ export const StorageNetworkView: React.FC = () => {
         </div>
 
         <div className="text-xs text-slate-400 font-mono">
-          Scope: {selectedVmId === 'all' ? 'All Registered Hosts' : getHostName(selectedVmId)}
+          Scope: {scopeLabel}
         </div>
       </div>
 

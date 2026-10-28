@@ -26,15 +26,14 @@ export const Sidebar: React.FC = () => {
     volumes, 
     activeVm, 
     selectedVmId, 
+    isInScope,
     setSelectedVmId,
     testVmConnection 
   } = useFleet();
 
   const [isTestingPing, setIsTestingPing] = React.useState(false);
 
-  const filteredContainers = selectedVmId === 'all' 
-    ? containers 
-    : containers.filter(c => c.vmId === selectedVmId);
+  const filteredContainers = containers.filter(c => isInScope(c.vmId));
 
   const runningContainersCount = filteredContainers.filter(c => c.state === 'running').length;
 
@@ -63,7 +62,7 @@ export const Sidebar: React.FC = () => {
       id: 'compose',
       label: 'Compose & Variables',
       icon: FileCode2,
-      badge: selectedVmId === 'all' ? `${composeStacks.length}` : `${composeStacks.filter(s => s.vmId === selectedVmId).length}`,
+      badge: `${composeStacks.filter(s => isInScope(s.vmId)).length}`,
       badgeColor: 'sidebar-badge-cyan bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
     },
     {

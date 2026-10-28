@@ -22,7 +22,7 @@ export const DeployContainerModal: React.FC = () => {
   } = useFleet();
 
   const [targetVmId, setTargetVmId] = useState<string>(() => {
-    return selectedVmId !== 'all' ? selectedVmId : (vms[0]?.id || '');
+    return selectedVmId !== 'all' && !selectedVmId.startsWith('group:') ? selectedVmId : (vms[0]?.id || '');
   });
 
   const [name, setName] = useState('');

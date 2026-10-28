@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, ComposeVariable, ClusterStats } from '../types';
 import { INITIAL_VMS, INITIAL_CONTAINERS, INITIAL_COMPOSE_STACKS, INITIAL_VOLUMES, INITIAL_NETWORKS } from '../data/initialData';
 import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
@@ -19,6 +19,11 @@ interface FleetContextType {
   networks: DockerNetwork[];
   selectedVmId: string;
   setSelectedVmId: (id: string) => void;
+  /** VM ids matched by the current selection (host or group); null means all VMs. */
+  scopeVmIds: string[] | null;
+  isInScope: (vmId: string) => boolean;
+  scopeLabel: string;
+  applyHostMetrics: (metric: any) => void;
   activeVm: VMHost | undefined;
   activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot';
   setActiveTab: (tab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'spring_boot') => void;
@@ -84,6 +89,14 @@ interface FleetContextType {
 }
 
 const FleetContext = createContext<FleetContextType | undefined>(undefined);
+
+export const GROUP_PREFIX = 'group:';
+
+// A VM belongs to a group per environment and per tag, e.g. "group:env:Production", "group:tag:backend"
+export const vmGroupKeys = (vm: VMHost): string[] => [
+  `${GROUP_PREFIX}env:${vm.environment}`,
+  ...(vm.tags || []).map((t) => `${GROUP_PREFIX}tag:${t}`),
+];
 
 export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [backendUrl, setBackendUrlState] = useState<string>(() => getApiBaseUrl());
@@ -379,9 +392,18 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     fetchFromBackend();
   }, []);
 
-  // Whenever selectedVmId changes to a specific host, auto-query daemon for live containers, compose stacks, volumes & networks
+  // Whenever the selection changes to a host or group, auto-query daemons for live containers, compose stacks, volumes & networks
+  const groupHostIdsKey = selectedVmId.startsWith(GROUP_PREFIX)
+    ? vms.filter((v) => vmGroupKeys(v).includes(selectedVmId)).map((v) => v.id).join(',')
+    : '';
   useEffect(() => {
-    if (isBackendConnected && selectedVmId && selectedVmId !== 'all') {
+    if (!isBackendConnected || !selectedVmId || selectedVmId === 'all') return;
+    const hostIds = selectedVmId.startsWith(GROUP_PREFIX)
+      ? groupHostIdsKey.split(',').filter(Boolean)
+      : [selectedVmId];
+    hostIds.forEach((hostId) => refreshHostResources(hostId));
+
+    function refreshHostResources(selectedVmId: string) {
       api.getContainers(selectedVmId)
         .then((live) => {
           setContainers((prev) => {
@@ -432,92 +454,69 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           console.warn(`Could not refresh networks for host ${selectedVmId}:`, err);
         });
     }
-  }, [selectedVmId, isBackendConnected]);
+  }, [selectedVmId, isBackendConnected, groupHostIdsKey]);
 
-  const registeredVmIds = vms.map((vm) => vm.id).join(',');
+  // Called by the live metrics panel (only while it is expanded) to sync readings into shared state
+  const applyHostMetrics = useCallback((metric: any) => {
+    setVms((current) => {
+      const updated = current.map((vm) => {
+        if (vm.id !== metric.vmId) return vm;
+        return {
+          ...vm,
+          metricsSource: metric.source,
+          cpuUsagePercent: metric.cpuPercent,
+          memoryUsedPercent: metric.memPercent,
+          cpuCores: metric.cpuCores ?? vm.cpuCores,
+          memoryGb: metric.memTotalMb > 0 ? Number((metric.memTotalMb / 1024).toFixed(1)) : vm.memoryGb,
+          diskGb: metric.diskTotalMb && metric.diskTotalMb > 0
+            ? Number((metric.diskTotalMb / 1024).toFixed(1))
+            : vm.diskGb,
+          diskUsedPercent: metric.diskAvailable && typeof metric.diskPercent === 'number'
+            ? metric.diskPercent
+            : vm.diskUsedPercent,
+          diskMetricsAvailable: metric.diskAvailable ?? typeof metric.diskPercent === 'number',
+        };
+      });
+      localStorage.setItem('fleetdock_vms', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
-  useEffect(() => {
-    if (!isBackendConnected || dataSource !== 'spring_boot' || !registeredVmIds) return;
-
-    const hostIds = registeredVmIds.split(',');
-    let cancelled = false;
-    let timeout: ReturnType<typeof setTimeout>;
-
-    const refreshMetrics = async () => {
-      const metrics = await Promise.all(hostIds.map(async (id) => {
-        try {
-          const data = await api.getHostMetrics(id);
-          if (data.error) {
-            console.warn(`Could not refresh metrics for host ${id}:`, data.error);
-            return null;
-          }
-          return data;
-        } catch (err) {
-          console.warn(`Could not refresh metrics for host ${id}:`, err);
-          return null;
-        }
-      }));
-
-      if (cancelled) return;
-
-      const metricsByHostId = new Map(
-        metrics.filter((metric) => metric !== null).map((metric) => [metric.vmId, metric])
-      );
-      if (metricsByHostId.size > 0) {
-        setVms((current) => {
-          const updated = current.map((vm) => {
-            const metric = metricsByHostId.get(vm.id);
-            if (!metric) return vm;
-
-            return {
-              ...vm,
-              metricsSource: metric.source,
-              cpuUsagePercent: metric.cpuPercent,
-              memoryUsedPercent: metric.memPercent,
-              cpuCores: metric.cpuCores ?? vm.cpuCores,
-              memoryGb: metric.memTotalMb > 0 ? Number((metric.memTotalMb / 1024).toFixed(1)) : vm.memoryGb,
-              diskGb: metric.diskTotalMb && metric.diskTotalMb > 0
-                ? Number((metric.diskTotalMb / 1024).toFixed(1))
-                : vm.diskGb,
-              diskUsedPercent: metric.diskAvailable && typeof metric.diskPercent === 'number'
-                ? metric.diskPercent
-                : vm.diskUsedPercent,
-              diskMetricsAvailable: metric.diskAvailable ?? typeof metric.diskPercent === 'number',
-            };
-          });
-          localStorage.setItem('fleetdock_vms', JSON.stringify(updated));
-          return updated;
-        });
-      }
-
-      if (!cancelled) timeout = setTimeout(refreshMetrics, 10000);
-    };
-
-    void refreshMetrics();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-    };
-  }, [isBackendConnected, dataSource, registeredVmIds]);
 
   const activeVm = useMemo(() => {
     return vms.find((v) => v.id === selectedVmId);
   }, [vms, selectedVmId]);
+
+  const scopeVmIds = useMemo<string[] | null>(() => {
+    if (selectedVmId === 'all') return null;
+    if (selectedVmId.startsWith(GROUP_PREFIX)) {
+      return vms.filter((v) => vmGroupKeys(v).includes(selectedVmId)).map((v) => v.id);
+    }
+    return [selectedVmId];
+  }, [vms, selectedVmId]);
+
+  const isInScope = (vmId: string) => scopeVmIds === null || scopeVmIds.includes(vmId);
+
+  const scopeLabel = selectedVmId === 'all'
+    ? 'All Registered Hosts'
+    : selectedVmId.startsWith(GROUP_PREFIX)
+      ? `Group ${selectedVmId.slice(GROUP_PREFIX.length)} (${scopeVmIds?.length ?? 0} VMs)`
+      : vms.find((v) => v.id === selectedVmId)?.name || selectedVmId;
 
   // Compute cluster statistics
   const clusterStats = useMemo<ClusterStats>(() => {
     const totalVms = vms.length;
     const onlineVms = vms.filter((v) => v.status === 'online').length;
 
-    const filteredContainers = selectedVmId === 'all' 
-      ? containers 
-      : containers.filter((c) => c.vmId === selectedVmId);
+    const filteredContainers = scopeVmIds === null
+      ? containers
+      : containers.filter((c) => scopeVmIds.includes(c.vmId));
 
     const totalContainers = filteredContainers.length;
     const runningContainers = filteredContainers.filter((c) => c.state === 'running').length;
     const stoppedContainers = filteredContainers.filter((c) => c.state === 'stopped' || c.state === 'exited').length;
 
-    const activeVmList = selectedVmId === 'all' ? vms : vms.filter((v) => v.id === selectedVmId);
+    const activeVmList = scopeVmIds === null ? vms : vms.filter((v) => scopeVmIds.includes(v.id));
     const totalMemoryGb = activeVmList.reduce((acc, v) => acc + v.memoryGb, 0);
     const totalCpuCores = activeVmList.reduce((acc, v) => acc + v.cpuCores, 0);
     const avgCpu = totalCpuCores > 0
@@ -540,7 +539,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       totalMemoryGb,
       usedMemoryGb: Number(usedMemoryGb.toFixed(1)),
     };
-  }, [vms, containers, selectedVmId]);
+  }, [vms, containers, scopeVmIds]);
 
   // Actions with backend persistence
   const addVm = async (newVm: any) => {
@@ -1041,6 +1040,14 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const bulkContainerAction = (action: 'start' | 'stop' | 'restart' | 'delete', ids: string[]) => {
+    if (isBackendConnected) {
+      const run = { start: startContainer, stop: stopContainer, restart: restartContainer, delete: deleteContainer }[action];
+      Promise.allSettled(ids.map((id) => run(id))).then((results) => {
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        if (failed > 0) addAlert('warning', 'Bulk ' + action, `${failed} of ${ids.length} containers failed.`);
+      });
+      return;
+    }
     if (action === 'delete') {
       setContainers((prev) => prev.filter((c) => !ids.includes(c.id)));
       addAlert('warning', 'Bulk Remove', `Removed ${ids.length} containers.`);
@@ -1175,6 +1182,10 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         volumes,
         networks,
         selectedVmId,
+        scopeVmIds,
+        isInScope,
+        scopeLabel,
+        applyHostMetrics,
         setSelectedVmId,
         activeVm,
         activeTab,

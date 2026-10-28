@@ -24,11 +24,6 @@ export const AddVmModal: React.FC = () => {
   const [ip, setIp] = useState('');
   const [port, setPort] = useState(22);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Development' | 'Edge'>('Production');
-  const [os, setOs] = useState('Ubuntu 24.04 LTS');
-  const [arch, setArch] = useState('x86_64');
-  const [cpuCores, setCpuCores] = useState(8);
-  const [memoryGb, setMemoryGb] = useState(16);
-  const [diskGb, setDiskGb] = useState(250);
   const [tagsInput, setTagsInput] = useState('docker, backend');
 
   // Auth Type
@@ -104,11 +99,11 @@ export const AddVmModal: React.FC = () => {
           useSudo,
         },
         environment,
-        os,
-        arch,
-        cpuCores: Number(cpuCores),
-        memoryGb: Number(memoryGb),
-        diskGb: Number(diskGb),
+        os: 'Unknown',
+        arch: 'Unknown',
+        cpuCores: 0,
+        memoryGb: 0,
+        diskGb: 0,
         tags,
       });
 
@@ -459,67 +454,8 @@ export const AddVmModal: React.FC = () => {
           {/* Node Hardware Specifications */}
           <div className="space-y-3 pt-2 border-t border-slate-800">
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono">
-              3. Hardware & OS Specifications
+              3. Labels
             </h4>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Operating System
-                </label>
-                <select
-                  value={os}
-                  onChange={(e) => setOs(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
-                >
-                  <option value="Ubuntu 24.04 LTS">Ubuntu 24.04 LTS</option>
-                  <option value="Ubuntu 22.04 LTS">Ubuntu 22.04 LTS</option>
-                  <option value="Debian 12 Bookworm">Debian 12 Bookworm</option>
-                  <option value="Alpine Linux 3.20">Alpine Linux 3.20</option>
-                  <option value="RHEL 9.4">RHEL 9.4</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  CPU Cores
-                </label>
-                <input
-                  type="number"
-                  value={cpuCores}
-                  onChange={(e) => setCpuCores(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  RAM (GB)
-                </label>
-                <input
-                  type="number"
-                  value={memoryGb}
-                  onChange={(e) => setMemoryGb(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Storage (GB)
-                </label>
-                <input
-                  type="number"
-                  value={diskGb}
-                  onChange={(e) => setDiskGb(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              OS, architecture, CPU, RAM and storage are auto-detected from the VM on registration; these values are only used in offline/local mode.
-            </p>
-
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">
                 Labels & Tags (Comma separated)

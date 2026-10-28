@@ -25,15 +25,14 @@ export const ComposeExplorer: React.FC = () => {
     composeStacks, 
     vms, 
     selectedVmId, 
+    isInScope,
     setSelectedVmId,
     updateComposeYaml, 
     updateComposeVariables, 
     executeComposeAction 
   } = useFleet();
 
-  const availableStacks = selectedVmId === 'all' 
-    ? composeStacks 
-    : composeStacks.filter((s) => s.vmId === selectedVmId);
+  const availableStacks = composeStacks.filter((s) => isInScope(s.vmId));
 
   const [selectedStackId, setSelectedStackId] = useState<string>(() => {
     return availableStacks[0]?.id || composeStacks[0]?.id || '';

@@ -30,6 +30,8 @@ export const ContainerList: React.FC = () => {
     containers, 
     vms, 
     selectedVmId, 
+    isInScope,
+    scopeLabel,
     setSelectedVmId,
     openEditVmModal,
     startContainer, 
@@ -55,7 +57,7 @@ export const ContainerList: React.FC = () => {
   const filteredContainers = useMemo(() => {
     return containers.filter((c) => {
       // Host filter
-      if (selectedVmId !== 'all' && c.vmId !== selectedVmId) {
+      if (!isInScope(c.vmId)) {
         return false;
       }
       // State filter
@@ -79,7 +81,7 @@ export const ContainerList: React.FC = () => {
       }
       return true;
     });
-  }, [containers, selectedVmId, stateFilter, searchTerm]);
+  }, [containers, vms, selectedVmId, stateFilter, searchTerm]);
 
   // Bulk selection logic
   const handleSelectAll = () => {
@@ -201,7 +203,7 @@ export const ContainerList: React.FC = () => {
           </div>
 
           {/* Edit Host Button (when specific VM selected) */}
-          {selectedVmId !== 'all' && (
+          {selectedVmId !== 'all' && !selectedVmId.startsWith('group:') && (
             <button
               onClick={() => {
                 const targetVm = vms.find((v) => v.id === selectedVmId);
@@ -245,7 +247,7 @@ export const ContainerList: React.FC = () => {
             <span className="font-semibold bg-cyan-500/20 px-2 py-0.5 rounded font-mono text-cyan-300">
               {selectedIds.length} Selected
             </span>
-            <span className="text-slate-400">Perform bulk orchestration on selected containers:</span>
+            <span className="text-slate-400">Bulk action on selected containers in {scopeLabel}:</span>
           </div>
 
           <div className="flex items-center gap-2">

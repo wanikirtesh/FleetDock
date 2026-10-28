@@ -36,11 +36,6 @@ export const EditVmModal: React.FC = () => {
   const [ip, setIp] = useState('');
   const [port, setPort] = useState(22);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Development' | 'Edge'>('Production');
-  const [os, setOs] = useState('Ubuntu 24.04 LTS');
-  const [arch, setArch] = useState('x86_64');
-  const [cpuCores, setCpuCores] = useState(8);
-  const [memoryGb, setMemoryGb] = useState(16);
-  const [diskGb, setDiskGb] = useState(250);
   const [tagsInput, setTagsInput] = useState('');
 
   // Auth Type
@@ -68,11 +63,6 @@ export const EditVmModal: React.FC = () => {
       setIp(editingVm.ip || '');
       setPort(editingVm.port || 22);
       setEnvironment(editingVm.environment || 'Production');
-      setOs(editingVm.os || 'Ubuntu 24.04 LTS');
-      setArch(editingVm.arch || 'x86_64');
-      setCpuCores(editingVm.cpuCores || 4);
-      setMemoryGb(editingVm.memoryGb || 16);
-      setDiskGb(editingVm.diskGb || 250);
       setTagsInput(editingVm.tags?.join(', ') || '');
       setAuthType(editingVm.authType || 'ssh_key');
       setUseSudo(editingVm.useSudo ?? editingVm.authPayload?.useSudo ?? true);
@@ -153,11 +143,6 @@ export const EditVmModal: React.FC = () => {
           useSudo,
         },
         environment,
-        os,
-        arch,
-        cpuCores: Number(cpuCores),
-        memoryGb: Number(memoryGb),
-        diskGb: Number(diskGb),
         tags,
       });
 
@@ -576,89 +561,8 @@ C:\\Users\\username\\.ssh\\id_rsa  (Windows)
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <h4 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
-                3. Operating System & Compute Specs
+                3. Labels
               </h4>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Operating System Distribution
-                </label>
-                <select
-                  value={os}
-                  onChange={(e) => setOs(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-                >
-                  <option value="Ubuntu 24.04 LTS">Ubuntu 24.04 LTS</option>
-                  <option value="Ubuntu 22.04 LTS">Ubuntu 22.04 LTS</option>
-                  <option value="Debian 12 Bookworm">Debian 12 Bookworm</option>
-                  <option value="RHEL 9 / Rocky Linux">RHEL 9 / Rocky Linux</option>
-                  <option value="CentOS Stream 9">CentOS Stream 9</option>
-                  <option value="Alpine Linux 3.20">Alpine Linux 3.20</option>
-                  <option value="Amazon Linux 2023">Amazon Linux 2023</option>
-                  <option value="Custom Linux">Custom Linux / Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  CPU Architecture
-                </label>
-                <select
-                  value={arch}
-                  onChange={(e) => setArch(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-                >
-                  <option value="x86_64">x86_64 (AMD64 / Intel 64-bit)</option>
-                  <option value="aarch64">aarch64 (ARM 64-bit / Graviton / Apple Silicon)</option>
-                  <option value="armv7l">armv7l (ARM 32-bit / Raspberry Pi)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  CPU Cores
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={256}
-                  value={cpuCores}
-                  onChange={(e) => setCpuCores(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Memory (GB)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={2048}
-                  value={memoryGb}
-                  onChange={(e) => setMemoryGb(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Disk (GB)
-                </label>
-                <input
-                  type="number"
-                  min={10}
-                  max={100000}
-                  value={diskGb}
-                  onChange={(e) => setDiskGb(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 transition-colors"
-                />
-              </div>
             </div>
 
             <div>

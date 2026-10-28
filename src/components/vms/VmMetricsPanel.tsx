@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Cpu, HardDrive, Activity, Wifi, WifiOff, RefreshCw, MemoryStick } from 'lucide-react';
 import { api } from '../../services/api';
 import { VMHost } from '../../types';
+import { useFleet } from '../../context/FleetContext';
 
 interface MetricsSnapshot {
   cpuPercent: number;
@@ -165,6 +166,11 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const { applyHostMetrics } = useFleet();
+  const vmRef = useRef(vm);
+  vmRef.current = vm;
+  const applyRef = useRef(applyHostMetrics);
+  applyRef.current = applyHostMetrics;
 
   const fetchMetrics = useCallback(async () => {
     if (!isBackendConnected) return;
@@ -176,19 +182,20 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
         setError(data.error);
         return;
       }
-
+      applyRef.current(data);
+      const cur = vmRef.current;
       const snap: MetricsSnapshot = {
-        cpuPercent: typeof data.cpuPercent === 'number' ? data.cpuPercent : vm.cpuUsagePercent,
-        memPercent: typeof data.memPercent === 'number' ? data.memPercent : vm.memoryUsedPercent,
+        cpuPercent: typeof data.cpuPercent === 'number' ? data.cpuPercent : cur.cpuUsagePercent,
+        memPercent: typeof data.memPercent === 'number' ? data.memPercent : cur.memoryUsedPercent,
         diskPercent: data.diskAvailable === false
           ? null
-          : typeof data.diskPercent === 'number' ? data.diskPercent : vm.diskUsedPercent,
-        memTotalMb: typeof data.memTotalMb === 'number' ? data.memTotalMb : vm.memoryGb * 1024,
+          : typeof data.diskPercent === 'number' ? data.diskPercent : cur.diskUsedPercent,
+        memTotalMb: typeof data.memTotalMb === 'number' ? data.memTotalMb : cur.memoryGb * 1024,
         memUsedMb: typeof data.memUsedMb === 'number' ? data.memUsedMb : 0,
-        diskTotalMb: typeof data.diskTotalMb === 'number' ? data.diskTotalMb : vm.diskGb * 1024,
+        diskTotalMb: typeof data.diskTotalMb === 'number' ? data.diskTotalMb : cur.diskGb * 1024,
         diskUsedMb: typeof data.diskUsedMb === 'number'
           ? data.diskUsedMb
-          : vm.diskGb * 1024 * vm.diskUsedPercent / 100,
+          : cur.diskGb * 1024 * cur.diskUsedPercent / 100,
         source: data.source,
         timestamp: Date.now(),
       };
@@ -202,7 +209,7 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
     } finally {
       if (mountedRef.current) setIsPolling(false);
     }
-  }, [vm.id, vm.cpuUsagePercent, vm.memoryUsedPercent, vm.diskUsedPercent, vm.memoryGb, isBackendConnected]);
+  }, [vm.id, isBackendConnected]);
 
   useEffect(() => {
     mountedRef.current = true;
