@@ -37,6 +37,9 @@ public class VmHost {
     @Column(nullable = false)
     private String environment; // Production, Staging, Development, Edge
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String ownerId;
+
     private String os;
     private String arch;
     private String dockerVersion;

@@ -6,6 +6,8 @@
 import React from 'react';
 import { FleetProvider, useFleet } from './context/FleetContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginPage } from './components/auth/LoginPage';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { ActivityAlerts } from './components/layout/ActivityAlerts';
@@ -99,9 +101,20 @@ const DashboardContent: React.FC = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <FleetProvider>
-        <DashboardContent />
-      </FleetProvider>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
     </ThemeProvider>
   );
 }
+
+const AuthGate: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) return <LoginPage />;
+  // Keyed by user so a different account always starts from a fresh state.
+  return (
+    <FleetProvider key={user.id}>
+      <DashboardContent />
+    </FleetProvider>
+  );
+};

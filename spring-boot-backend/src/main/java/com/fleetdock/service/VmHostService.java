@@ -25,8 +25,8 @@ public class VmHostService {
     private final com.fleetdock.repository.ComposeStackRepository composeStackRepository;
 
     @Transactional(readOnly = true)
-    public List<VmHost> findAllHosts() {
-        return vmHostRepository.findAll();
+    public List<VmHost> findAllHosts(String ownerId) {
+        return vmHostRepository.findByOwnerId(ownerId);
     }
 
     @Transactional(readOnly = true)
@@ -36,7 +36,7 @@ public class VmHostService {
     }
 
     @Transactional
-    public VmHost registerHost(VmRegistrationRequest request) {
+    public VmHost registerHost(VmRegistrationRequest request, String ownerId) {
         log.info("Registering VM host: {} on {}:{}", request.getName(), request.getIp(), request.getPort());
 
         AuthCredential credential = AuthCredential.builder()
@@ -53,6 +53,7 @@ public class VmHostService {
         VmHost host = VmHost.builder()
                 .id("vm-" + UUID.randomUUID().toString().substring(0, 8))
                 .name(request.getName())
+                .ownerId(ownerId)
                 .ip(request.getIp())
                 .port(request.getPort())
                 .authType(request.getAuthType())

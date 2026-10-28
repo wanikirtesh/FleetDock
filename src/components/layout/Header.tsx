@@ -12,10 +12,13 @@ import {
   Layers,
   Database,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  User,
+  LogOut
 } from 'lucide-react';
 import { useFleet, GROUP_PREFIX } from '../../context/FleetContext';
 import { ThemeToggle } from './ThemeToggle';
+import { useAuth } from '../../context/AuthContext';
 
 export const Header: React.FC = () => {
   const { 
@@ -31,6 +34,7 @@ export const Header: React.FC = () => {
     fetchFromBackend,
     seedBackendDatabase
   } = useFleet();
+  const { user, logout } = useAuth();
 
   const environmentGroups = Array.from(new Set(vms.map((v) => v.environment))).sort();
   const tagGroups = Array.from(new Set(vms.flatMap((v) => v.tags || []))).sort();
@@ -148,6 +152,19 @@ export const Header: React.FC = () => {
 
           {/* Theme Toggle */}
           <ThemeToggle />
+
+          {/* Signed-in user */}
+          <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-slate-800">
+            <User className="w-4 h-4 text-slate-400" />
+            <span className="hidden md:inline text-xs text-slate-300 max-w-[7rem] truncate">{user?.username}</span>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="btn-icon-muted p-1.5 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-slate-800 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
 
         </div>
 

@@ -23,8 +23,8 @@ public class VmHostController {
     private final DockerEngineService dockerEngineService;
 
     @GetMapping
-    public ResponseEntity<List<VmHost>> getAllHosts() {
-        return ResponseEntity.ok(vmHostService.findAllHosts());
+    public ResponseEntity<List<VmHost>> getAllHosts(@RequestAttribute(AuthInterceptor.USER_ID_ATTR) String userId) {
+        return ResponseEntity.ok(vmHostService.findAllHosts(userId));
     }
 
     @GetMapping("/{id}")
@@ -33,8 +33,10 @@ public class VmHostController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<VmHost> registerVm(@Valid @RequestBody VmRegistrationRequest request) {
-        VmHost created = vmHostService.registerHost(request);
+    public ResponseEntity<VmHost> registerVm(
+            @Valid @RequestBody VmRegistrationRequest request,
+            @RequestAttribute(AuthInterceptor.USER_ID_ATTR) String userId) {
+        VmHost created = vmHostService.registerHost(request, userId);
         created = dockerEngineService.collectHostSpecs(created.getId());
         return new ResponseEntity<>(created, HttpStatus.CREATED);
     }

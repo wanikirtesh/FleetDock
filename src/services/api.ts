@@ -1,4 +1,8 @@
 import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork } from '../types';
+import { authFetch, AuthUser } from './auth';
+
+// All API calls in this module carry the signed-in user's bearer token.
+const fetch = authFetch;
 
 export const getApiBaseUrl = (): string => {
   return localStorage.getItem('fleetdock_backend_url') || '';
@@ -13,7 +17,31 @@ const buildUrl = (path: string): string => {
   return base ? `${base}${path}` : path;
 };
 
+export interface AuthSession {
+  token: string;
+  expiresAt: number;
+  user: AuthUser;
+}
+
+const authRequest = async (path: 'login' | 'register', username: string, password: string): Promise<AuthSession> => {
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(`/api/v1/auth/${path}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+  } catch {
+    throw new Error('Could not reach the backend. Check the server URL.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data as AuthSession;
+};
+
 export const api = {
+  login: (username: string, password: string) => authRequest('login', username, password),
+  register: (username: string, password: string) => authRequest('register', username, password),
   // Health check
   checkHealth: async (overrideUrl?: string) => {
     const url = overrideUrl !== undefined ? `${overrideUrl.replace(/\/$/, '')}/api/v1/health` : buildUrl('/api/v1/health');

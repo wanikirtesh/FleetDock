@@ -27,6 +27,7 @@ fleetdock:
   cors:
     allowed-origins: "*"
   security:
+    jwt-secret: ${JWT_SECRET:${fleetdock.security.vault-key}}
     vault-key: ${VAULT_MASTER_KEY:fleetdock-aes-256-master-key-xyz}
   docker:
     connection-timeout-seconds: 10
