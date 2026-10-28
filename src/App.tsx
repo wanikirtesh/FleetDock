@@ -54,7 +54,7 @@ const DashboardContent: React.FC = () => {
         <Sidebar />
 
         {/* Dynamic Center Stage */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-20 md:pb-8">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 w-full pb-20 md:pb-8">
           {activeTab === 'overview' && <ClusterOverview />}
           {activeTab === 'containers' && <ContainerList />}
           {activeTab === 'compose' && <ComposeExplorer />}

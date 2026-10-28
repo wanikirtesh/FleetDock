@@ -90,7 +90,7 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside className="w-64 shrink-0 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col justify-between hidden md:flex">
+    <aside className="w-72 shrink-0 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col justify-between hidden md:flex">
       
       {/* Navigation Links */}
       <div className="p-4 space-y-6">
@@ -106,18 +106,19 @@ export const Sidebar: React.FC = () => {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  title={item.label}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-all ${
                     isActive
                       ? 'nav-item-active bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/5 font-semibold'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
+                    <span className="truncate whitespace-nowrap">{item.label}</span>
                   </div>
                   {item.badge && (
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-mono ${item.badgeColor}`}>
+                    <span className={`shrink-0 whitespace-nowrap ml-2 text-[11px] px-2 py-0.5 rounded-full font-mono ${item.badgeColor}`}>
                       {item.badge}
                     </span>
                   )}
