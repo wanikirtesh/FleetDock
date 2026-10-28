@@ -9,4 +9,6 @@ import java.util.List;
 @Repository
 public interface ComposeStackRepository extends JpaRepository<ComposeStackEntity, String> {
     List<ComposeStackEntity> findByVmId(String vmId);
+
+    void deleteByVmId(String vmId);
 }

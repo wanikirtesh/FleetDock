@@ -234,6 +234,30 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // Fetch real data from Spring Boot REST API
+  const clearHostScopedData = () => {
+    setContainers([]);
+    setComposeStacks([]);
+    setVolumes([]);
+    setNetworks([]);
+    ['containers', 'compose', 'volumes', 'networks'].forEach((k) =>
+      localStorage.setItem(`fleetdock_${k}`, '[]')
+    );
+  };
+
+  // Drop containers, stacks, volumes and networks whose VM no longer exists
+  useEffect(() => {
+    const ids = new Set(vms.map((v) => v.id));
+    const prune = <T extends { vmId: string }>(key: string, prev: T[]): T[] => {
+      const next = prev.filter((i) => ids.has(i.vmId));
+      if (next.length === prev.length) return prev;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    };
+    setContainers((p) => prune('fleetdock_containers', p));
+    setComposeStacks((p) => prune('fleetdock_compose', p));
+    setVolumes((p) => prune('fleetdock_volumes', p));
+    setNetworks((p) => prune('fleetdock_networks', p));
+  }, [vms]);
   const fetchFromBackend = async () => {
     setIsSyncing(true);
     try {
@@ -261,9 +285,8 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         );
         const stackLists = await Promise.all(composePromises);
         const mergedStacks = stackLists.flat();
-        if (mergedStacks.length > 0) {
-          setComposeStacks(mergedStacks);
-        }
+        setComposeStacks(mergedStacks);
+        localStorage.setItem('fleetdock_compose', JSON.stringify(mergedStacks));
 
         // Fetch volumes and networks for all hosts
         const volumePromises = remoteHosts.map((h) =>
@@ -285,8 +308,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${mergedContainers.length} live container(s).`);
       } else {
         // Backend DB has 0 registered hosts
-        setContainers([]);
-        localStorage.setItem('fleetdock_containers', JSON.stringify([]));
+        clearHostScopedData();
         addAlert('info', 'Spring Boot Connected', 'Database currently has 0 registered hosts. Click "+ Register VM" to add a host or "Seed Spring Boot DB".');
       }
     } catch (err: any) {
@@ -343,8 +365,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         addAlert('success', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Loaded ${remoteHosts.length} host(s) and ${mergedContainers.length} container(s) from database.`);
       } else {
-        setContainers([]);
-        localStorage.setItem('fleetdock_containers', JSON.stringify([]));
+        clearHostScopedData();
         addAlert('info', 'Connected to Spring Boot', `Handshake verified (${health.latencyMs}ms). Database currently has 0 hosts. Click "Seed Demo Hosts" or "+ Register VM" to populate it.`);
       }
       return true;
@@ -805,7 +826,24 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
     setVms((prev) => prev.filter((v) => v.id !== id));
     setContainers((prev) => prev.filter((c) => c.vmId !== id));
-    setComposeStacks((prev) => prev.filter((s) => s.vmId !== id));
+    const persist = (key: string, items: any[]) => {
+      try { localStorage.setItem(key, JSON.stringify(items)); } catch { /* ignore */ }
+    };
+    setComposeStacks((prev) => {
+      const next = prev.filter((s) => s.vmId !== id);
+      persist('fleetdock_compose', next);
+      return next;
+    });
+    setVolumes((prev) => {
+      const next = prev.filter((v) => v.vmId !== id);
+      persist('fleetdock_volumes', next);
+      return next;
+    });
+    setNetworks((prev) => {
+      const next = prev.filter((n) => n.vmId !== id);
+      persist('fleetdock_networks', next);
+      return next;
+    });
     if (selectedVmId === id) setSelectedVmId('all');
     addAlert('warning', 'Host Removed', `VM ${target?.name || id} removed from backend.`);
   };

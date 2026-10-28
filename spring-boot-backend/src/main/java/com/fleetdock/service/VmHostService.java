@@ -22,6 +22,7 @@ public class VmHostService {
     private final VmHostRepository vmHostRepository;
     private final VaultEncryptionService encryptionService;
     private final DockerClientFactory dockerClientFactory;
+    private final com.fleetdock.repository.ComposeStackRepository composeStackRepository;
 
     @Transactional(readOnly = true)
     public List<VmHost> findAllHosts() {
@@ -164,6 +165,7 @@ public class VmHostService {
         } catch (Exception e) {
             log.warn("Could not evict cached DockerClient for host {}: {}", id, e.getMessage());
         }
+        composeStackRepository.deleteByVmId(id);
         vmHostRepository.deleteById(id);
     }
 }
