@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, RefreshCw, UploadCloud, Plus } from 'lucide-react';
+import { Database, RefreshCw, UploadCloud, Plus, RotateCcw } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 
 export const BackendSettings: React.FC = () => {
@@ -13,6 +13,7 @@ export const BackendSettings: React.FC = () => {
     seedBackendDatabase,
     dataSource,
     setDataSource,
+    resetToSampleData,
     setIsAddVmModalOpen,
   } = useFleet();
 
@@ -92,6 +93,24 @@ export const BackendSettings: React.FC = () => {
               Switch to {dataSource === 'spring_boot' ? 'demo mode' : 'live mode'}
             </button>
           </div>
+        </div>
+
+        <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-slate-400">
+            <span className="font-semibold text-slate-200">Reset demo state</span>
+            <p className="text-[11px] mt-0.5">Restores the in-memory sample hosts and containers.</p>
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm('Reset to the sample demo state? Local changes will be lost.')) {
+                resetToSampleData();
+              }
+            }}
+            className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/40 font-medium flex items-center gap-1.5 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset demo state</span>
+          </button>
         </div>
       </div>
     </div>

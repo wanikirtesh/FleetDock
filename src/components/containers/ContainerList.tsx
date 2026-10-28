@@ -53,6 +53,13 @@ export const ContainerList: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
+  // Containers within the selected host/group; used for the filter badge counts
+  const scopedContainers = useMemo(
+    () => containers.filter((c) => isInScope(c.vmId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [containers, vms, selectedVmId]
+  );
+
   // Filtered containers
   const filteredContainers = useMemo(() => {
     return containers.filter((c) => {
@@ -168,7 +175,7 @@ export const ContainerList: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              All ({containers.length})
+              All ({scopedContainers.length})
             </button>
             <button
               onClick={() => setStateFilter('running')}
@@ -178,7 +185,7 @@ export const ContainerList: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Running ({containers.filter((c) => c.state === 'running').length})
+              Running ({scopedContainers.filter((c) => c.state === 'running').length})
             </button>
             <button
               onClick={() => setStateFilter('stopped')}
@@ -188,7 +195,7 @@ export const ContainerList: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Stopped ({containers.filter((c) => c.state === 'stopped' || c.state === 'exited').length})
+              Stopped ({scopedContainers.filter((c) => c.state === 'stopped' || c.state === 'exited').length})
             </button>
             <button
               onClick={() => setStateFilter('paused')}
@@ -198,7 +205,7 @@ export const ContainerList: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Paused ({containers.filter((c) => c.state === 'paused').length})
+              Paused ({scopedContainers.filter((c) => c.state === 'paused').length})
             </button>
           </div>
 

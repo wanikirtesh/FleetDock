@@ -26,7 +26,6 @@ export const Header: React.FC = () => {
     setIsAddVmModalOpen, 
     setIsDeployModalOpen,
     setActiveTab,
-    resetToSampleData,
     isBackendConnected,
     isSyncing,
     fetchFromBackend,
@@ -150,14 +149,6 @@ export const Header: React.FC = () => {
           {/* Theme Toggle */}
           <ThemeToggle />
 
-          {/* Reset Demo Button */}
-          <button
-            onClick={resetToSampleData}
-            title="Reset to Sample Demo State"
-            className="btn-icon-muted p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
         </div>
 
       </div>

@@ -22,6 +22,7 @@ import {
 import { useFleet } from '../../context/FleetContext';
 import { VMHost, AuthType } from '../../types';
 import { VmMetricsPanel } from './VmMetricsPanel';
+import { VmCommandPanel } from './VmCommandPanel';
 
 export const VmHostManager: React.FC = () => {
   const { 
@@ -38,6 +39,7 @@ export const VmHostManager: React.FC = () => {
 
   const [testingId, setTestingId] = useState<string | null>(null);
   const [expandedMetricsId, setExpandedMetricsId] = useState<string | null>(null);
+  const [terminalId, setTerminalId] = useState<string | null>(null);
 
   const toggleMetrics = (id: string) => {
     setExpandedMetricsId((prev) => (prev === id ? null : id));
@@ -233,6 +235,13 @@ export const VmHostManager: React.FC = () => {
                 </div>
               )}
 
+              {/* Command runner (expandable) */}
+              {terminalId === vm.id && (
+                <div className="border-t border-slate-800/60 pt-3 mt-1">
+                  <VmCommandPanel vm={vm} isBackendConnected={isBackendConnected} />
+                </div>
+              )}
+
               {/* Actions Footer */}
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
                 <button
@@ -261,6 +270,19 @@ export const VmHostManager: React.FC = () => {
                     {expandedMetricsId === vm.id
                       ? <ChevronUp className="w-3 h-3" />
                       : <ChevronDown className="w-3 h-3" />}
+                  </button>
+
+                  <button
+                    onClick={() => setTerminalId((prev) => (prev === vm.id ? null : vm.id))}
+                    className={`px-2.5 py-1 rounded border flex items-center gap-1 transition-colors text-xs ${
+                      terminalId === vm.id
+                        ? 'bg-emerald-950/60 border-emerald-700/50 text-emerald-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750 hover:text-emerald-300'
+                    }`}
+                    title="Run shell commands on this VM"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Terminal</span>
                   </button>
 
                   <button
