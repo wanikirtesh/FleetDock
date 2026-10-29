@@ -736,6 +736,40 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
   res.json({ output, exitCode, cwd });
 });
 
+// Container mounts with disk usage
+app.get('/api/v1/hosts/:vmId/mounts', async (req, res) => {
+  const { vmId } = req.params;
+  try {
+    const springCheck = await fetch('http://127.0.0.1:8080/api/v1/health', { signal: AbortSignal.timeout(600) });
+    if (springCheck.ok) {
+      const springRes = await fetch(`http://127.0.0.1:8080/api/v1/hosts/${vmId}/mounts`, {
+        headers: req.headers.authorization ? { Authorization: String(req.headers.authorization) } : {},
+        signal: AbortSignal.timeout(120000),
+      });
+      if (springRes.ok) return res.json(await springRes.json());
+    }
+  } catch {}
+
+  // Offline fallback: derive rows from the simulated containers (no real usage available)
+  const rows = deployedContainers
+    .filter((c) => c.vmId === vmId)
+    .flatMap((c) => (c.mounts || []).map((m: any) => ({
+      containerId: c.id,
+      containerName: c.name,
+      type: m.type || 'bind',
+      name: m.type === 'volume' ? m.source : '',
+      source: m.source,
+      target: m.target,
+      mode: m.mode || 'rw',
+      usedKb: null,
+      fsTotalKb: null,
+      fsUsedKb: null,
+      fsAvailKb: null,
+      fsMount: null,
+    })));
+  res.json(rows);
+});
+
 // Volumes & Networks
 app.get('/api/v1/hosts/:vmId/volumes', async (req, res) => {
   const { vmId } = req.params;

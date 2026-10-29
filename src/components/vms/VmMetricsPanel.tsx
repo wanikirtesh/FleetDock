@@ -3,6 +3,7 @@ import { Cpu, HardDrive, Activity, Wifi, WifiOff, RefreshCw, MemoryStick } from 
 import { api } from '../../services/api';
 import { VMHost } from '../../types';
 import { useFleet } from '../../context/FleetContext';
+import { fmtPct } from '../../utils/format';
 
 interface MetricsSnapshot {
   cpuPercent: number;
@@ -136,7 +137,7 @@ function MetricCard({
 
         <div className="flex items-end gap-1">
           <span className="text-3xl font-black tabular-nums leading-none" style={{ color: barColor }}>
-            {value === null ? '--' : value.toFixed(1)}
+            {value === null ? '--' : value.toFixed(2)}
           </span>
           {value !== null && <span className="text-sm font-semibold text-slate-400 mb-0.5">%</span>}
         </div>
@@ -335,7 +336,7 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">CPU Trend</span>
               <span className="text-[10px] font-mono text-cyan-400">
-                {cpu === null ? '--' : `${cpu.toFixed(1)}%`}
+                {cpu === null ? '--' : fmtPct(cpu)}
               </span>
             </div>
             <div style={{ height: '32px' }}>
@@ -346,7 +347,7 @@ export const VmMetricsPanel: React.FC<VmMetricsPanelProps> = ({ vm, isBackendCon
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Memory Trend</span>
               <span className="text-[10px] font-mono text-violet-400">
-                {mem === null ? '--' : `${mem.toFixed(1)}%`}
+                {mem === null ? '--' : fmtPct(mem)}
               </span>
             </div>
             <div style={{ height: '32px' }}>

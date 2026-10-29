@@ -16,6 +16,7 @@ import { ContainerList } from './components/containers/ContainerList';
 import { ComposeExplorer } from './components/compose/ComposeExplorer';
 import { VmHostManager } from './components/vms/VmHostManager';
 import { StorageNetworkView } from './components/storage/StorageNetworkView';
+import { MountsView } from './components/storage/MountsView';
 import { BackendSettings } from './components/settings/BackendSettings';
 import { ContainerLogsModal } from './components/containers/ContainerLogsModal';
 import { ContainerShellModal } from './components/containers/ContainerShellModal';
@@ -60,6 +61,7 @@ const DashboardContent: React.FC = () => {
           {activeTab === 'compose' && <ComposeExplorer />}
           {activeTab === 'vms' && <VmHostManager />}
           {activeTab === 'storage_network' && <StorageNetworkView />}
+          {activeTab === 'mounts' && <MountsView />}
           {activeTab === 'settings' && <BackendSettings />}
         </main>
       </div>

@@ -104,7 +104,25 @@ public class DockerEngineService {
             List<Container> dockerContainers = cmd.exec();
             log.info("Fetched {} live containers from host {} ({})", dockerContainers.size(), host.getName(), host.getIp());
 
-            return dockerContainers.stream().map(c -> {
+            // Inspecting is one round trip per container, so run them concurrently (order is preserved)
+            ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, Math.min(8, dockerContainers.size())));
+            try {
+                List<CompletableFuture<ContainerDto>> futures = dockerContainers.stream()
+                        .map(c -> CompletableFuture.supplyAsync(() -> toContainerDto(client, vmId, c), pool))
+                        .collect(Collectors.toList());
+                return futures.stream().map(CompletableFuture::join).collect(Collectors.toList());
+            } finally {
+                pool.shutdown();
+            }
+
+        } catch (Exception e) {
+            log.error("Could not fetch live containers from Docker daemon on host {} ({}): {}", 
+                    host.getName(), host.getIp(), e.getMessage());
+            throw new RuntimeException("Failed to query Docker daemon on " + host.getIp() + ":" + host.getPort() + " -> " + e.getMessage(), e);
+        }
+    }
+
+    private ContainerDto toContainerDto(DockerClient client, String vmId, Container c) {
                 String name = (c.getNames() != null && c.getNames().length > 0)
                         ? c.getNames()[0].replaceFirst("^/", "")
                         : c.getId().substring(0, Math.min(12, c.getId().length()));
@@ -169,13 +187,6 @@ public class DockerEngineService {
                         .composeStack(composeProject)
                         .restartPolicy(restartPolicy)
                         .build();
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Could not fetch live containers from Docker daemon on host {} ({}): {}", 
-                    host.getName(), host.getIp(), e.getMessage());
-            throw new RuntimeException("Failed to query Docker daemon on " + host.getIp() + ":" + host.getPort() + " -> " + e.getMessage(), e);
-        }
     }
 
     public void startContainer(String vmId, String containerId) {

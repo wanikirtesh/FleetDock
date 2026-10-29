@@ -3,6 +3,7 @@ package com.fleetdock.controller;
 import com.fleetdock.dto.VmRegistrationRequest;
 import com.fleetdock.entity.VmHost;
 import com.fleetdock.service.DockerEngineService;
+import com.fleetdock.service.MountService;
 import com.fleetdock.service.VmHostService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class VmHostController {
 
     private final VmHostService vmHostService;
     private final DockerEngineService dockerEngineService;
+    private final MountService mountService;
 
     @GetMapping
     public ResponseEntity<List<VmHost>> getAllHosts(@RequestAttribute(AuthInterceptor.USER_ID_ATTR) String userId) {
@@ -66,6 +68,11 @@ public class VmHostController {
     @GetMapping("/{id}/volumes")
     public ResponseEntity<List<Map<String, Object>>> getHostVolumes(@PathVariable String id) {
         return ResponseEntity.ok(dockerEngineService.listVolumes(id));
+    }
+
+    @GetMapping("/{id}/mounts")
+    public ResponseEntity<List<Map<String, Object>>> getHostMounts(@PathVariable String id) {
+        return ResponseEntity.ok(mountService.listMounts(id));
     }
 
     @GetMapping("/{id}/networks")

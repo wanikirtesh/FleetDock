@@ -13,6 +13,7 @@ import {
   Activity
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { fmtPct } from '../../utils/format';
 import { VMHost, AuthType } from '../../types';
 import { VmMetricsPanel } from './VmMetricsPanel';
 import { VmCommandPanel } from './VmCommandPanel';
@@ -175,13 +176,13 @@ export const VmHostManager: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 font-mono space-y-1">
-                        <UsageBar label="CPU" value={vm.cpuUsagePercent} color="bg-cyan-400" text={`${vm.cpuUsagePercent}%`} />
-                        <UsageBar label="Mem" value={vm.memoryUsedPercent} color="bg-emerald-400" text={`${vm.memoryUsedPercent}%`} />
+                        <UsageBar label="CPU" value={vm.cpuUsagePercent} color="bg-cyan-400" text={fmtPct(vm.cpuUsagePercent)} />
+                        <UsageBar label="Mem" value={vm.memoryUsedPercent} color="bg-emerald-400" text={fmtPct(vm.memoryUsedPercent)} />
                         <UsageBar
                           label="Disk"
                           value={vm.diskMetricsAvailable === false ? 0 : vm.diskUsedPercent}
                           color="bg-purple-400"
-                          text={vm.diskMetricsAvailable === false ? 'N/A' : `${vm.diskUsedPercent}%`}
+                          text={vm.diskMetricsAvailable === false ? 'N/A' : fmtPct(vm.diskUsedPercent)}
                         />
                       </td>
 

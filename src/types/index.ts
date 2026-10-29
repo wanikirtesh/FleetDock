@@ -100,6 +100,22 @@ export interface ComposeStack {
   runningCount: number;
 }
 
+export interface HostMount {
+  vmId: string;
+  containerId: string;
+  containerName: string;
+  type: string;
+  name: string;
+  source: string;
+  target: string;
+  mode: 'ro' | 'rw';
+  usedKb: number | null;
+  fsTotalKb: number | null;
+  fsUsedKb: number | null;
+  fsAvailKb: number | null;
+  fsMount: string | null;
+}
+
 export interface DockerVolume {
   name: string;
   vmId: string;

@@ -1,4 +1,4 @@
-import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork } from '../types';
+import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, HostMount } from '../types';
 import { authFetch, AuthUser } from './auth';
 
 // All API calls in this module carry the signed-in user's bearer token.
@@ -304,6 +304,14 @@ export const api = {
       inUseBy: Array.isArray(v.inUseBy) ? v.inUseBy : [],
       createdAt: v.createdAt || v.CreatedAt || new Date().toISOString().substring(0, 10),
     }));
+  },
+
+  getMounts: async (vmId: string): Promise<HostMount[]> => {
+    const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/mounts`));
+    if (!res.ok) throw new Error(`Failed to fetch mounts: ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((m: any) => ({ ...m, vmId }));
   },
 
   getNetworks: async (vmId: string): Promise<DockerNetwork[]> => {

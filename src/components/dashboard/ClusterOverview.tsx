@@ -18,6 +18,7 @@ import {
   Edit3
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { fmtPct } from '../../utils/format';
 import { VMHost } from '../../types';
 
 export const ClusterOverview: React.FC = () => {
@@ -103,7 +104,7 @@ export const ClusterOverview: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5 mt-2 text-[11px] text-cyan-400 font-mono">
               <Activity className="w-3 h-3" />
-              <span>{Math.round((clusterStats.runningContainers / (clusterStats.totalContainers || 1)) * 100)}% active uptime</span>
+              <span>{((clusterStats.runningContainers / (clusterStats.totalContainers || 1)) * 100).toFixed(2)}% active uptime</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
@@ -117,7 +118,7 @@ export const ClusterOverview: React.FC = () => {
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Cluster Memory</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-2xl font-bold font-mono text-slate-100">{clusterStats.usedMemoryGb}</span>
-              <span className="text-xs text-slate-500">/ {clusterStats.totalMemoryGb} GB ({clusterStats.avgMemoryPercent}%)</span>
+              <span className="text-xs text-slate-500">/ {clusterStats.totalMemoryGb} GB ({fmtPct(clusterStats.avgMemoryPercent)})</span>
             </div>
             <div className="w-36 bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2.5">
               <div 
@@ -279,7 +280,7 @@ export const ClusterOverview: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                       <span>CPU{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''}</span>
-                      <span className="font-mono text-slate-200">{vm.cpuUsagePercent}%</span>
+                      <span className="font-mono text-slate-200">{fmtPct(vm.cpuUsagePercent)}</span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                       <div 
@@ -292,7 +293,7 @@ export const ClusterOverview: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                       <span>RAM{vm.metricsSource === 'docker_socket' ? ' (containers)' : ''}</span>
-                      <span className="font-mono text-slate-200">{vm.memoryUsedPercent}%</span>
+                      <span className="font-mono text-slate-200">{fmtPct(vm.memoryUsedPercent)}</span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                       <div 
@@ -306,7 +307,7 @@ export const ClusterOverview: React.FC = () => {
                     <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                       <span>Disk</span>
                       <span className="font-mono text-slate-200">
-                        {vm.diskMetricsAvailable === false ? 'N/A' : `${vm.diskUsedPercent}%`}
+                        {vm.diskMetricsAvailable === false ? 'N/A' : fmtPct(vm.diskUsedPercent)}
                       </span>
                     </div>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, ReactNode } from 'react';
-import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, ComposeVariable, ClusterStats } from '../types';
+import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, HostMount, ComposeVariable, ClusterStats } from '../types';
 import { INITIAL_VMS, INITIAL_CONTAINERS, INITIAL_COMPOSE_STACKS, INITIAL_VOLUMES, INITIAL_NETWORKS } from '../data/initialData';
 import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
 
@@ -17,6 +17,9 @@ interface FleetContextType {
   composeStacks: ComposeStack[];
   volumes: DockerVolume[];
   networks: DockerNetwork[];
+  mounts: HostMount[];
+  mountsLoading: Record<string, boolean>;
+  refreshHostMounts: (hostId: string, force?: boolean) => Promise<void>;
   selectedVmId: string;
   setSelectedVmId: (id: string) => void;
   /** VM ids matched by the current selection (host or group); null means all VMs. */
@@ -25,8 +28,8 @@ interface FleetContextType {
   scopeLabel: string;
   applyHostMetrics: (metric: any) => void;
   activeVm: VMHost | undefined;
-  activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings';
-  setActiveTab: (tab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings') => void;
+  activeTab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'mounts' | 'settings';
+  setActiveTab: (tab: 'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'mounts' | 'settings') => void;
   selectedContainerForLogs: Container | null;
   setSelectedContainerForLogs: (c: Container | null) => void;
   selectedContainerForShell: Container | null;
@@ -97,6 +100,9 @@ export type ContainerAction = 'start' | 'stop' | 'restart' | 'delete';
 const RESOURCE_TTL_MS = 60_000;
 const POLL_CHECK_MS = 30_000;
 const FETCH_TIMES_KEY = 'fleetdock_fetch_times';
+const MOUNT_FETCH_TIMES_KEY = 'fleetdock_mount_fetch_times';
+const MOUNT_TTL_MS = 300_000;
+const HOST_SYNC_CONCURRENCY = 6;
 
 // A VM belongs to a group per environment and per tag, e.g. "group:env:Production", "group:tag:backend"
 export const vmGroupKeys = (vm: VMHost): string[] => [
@@ -180,8 +186,18 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   });
 
+  const [mounts, setMounts] = useState<HostMount[]>(() => {
+    try {
+      const saved = localStorage.getItem('fleetdock_mounts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [mountsLoading, setMountsLoading] = useState<Record<string, boolean>>({});
+
   const [selectedVmId, setSelectedVmId] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'containers' | 'compose' | 'vms' | 'storage_network' | 'mounts' | 'settings'>('overview');
 
   const [selectedContainerForLogs, setSelectedContainerForLogs] = useState<Container | null>(null);
   const [selectedContainerForShell, setSelectedContainerForShell] = useState<Container | null>(null);
@@ -263,6 +279,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setComposeStacks((p) => prune('fleetdock_compose', p));
     setVolumes((p) => prune('fleetdock_volumes', p));
     setNetworks((p) => prune('fleetdock_networks', p));
+    setMounts((p) => prune('fleetdock_mounts', p));
   }, [vms]);
   // Hosts tagged before tags were persisted in the DB have none server-side; fall back to the local labels
   const withLocalTags = (hosts: VMHost[]): VMHost[] => {
@@ -286,8 +303,42 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     })()
   );
 
+  // Mounts need du/df on the host, which is slow, so they use their own longer-lived cache
+  const mountFetchRef = useRef<Record<string, number>>(
+    (() => {
+      try { return JSON.parse(localStorage.getItem(MOUNT_FETCH_TIMES_KEY) || '{}'); } catch { return {}; }
+    })()
+  );
+  const mountsInFlight = useRef<Set<string>>(new Set());
+
+  const refreshHostMounts = useCallback(async (hostId: string, force = false): Promise<void> => {
+    const age = Date.now() - (mountFetchRef.current[hostId] || 0);
+    if ((!force && age < MOUNT_TTL_MS) || mountsInFlight.current.has(hostId)) return;
+    mountsInFlight.current.add(hostId);
+    setMountsLoading((p) => ({ ...p, [hostId]: true }));
+    try {
+      const fresh = await api.getMounts(hostId);
+      setMounts((prev) => {
+        const updated = [...prev.filter((m) => m.vmId !== hostId), ...fresh];
+        try { localStorage.setItem('fleetdock_mounts', JSON.stringify(updated)); } catch { /* ignore */ }
+        return updated;
+      });
+      mountFetchRef.current[hostId] = Date.now();
+      try { localStorage.setItem(MOUNT_FETCH_TIMES_KEY, JSON.stringify(mountFetchRef.current)); } catch { /* ignore */ }
+    } catch (err) {
+      console.warn(`Could not refresh mounts for host ${hostId}:`, err);
+    } finally {
+      mountsInFlight.current.delete(hostId);
+      setMountsLoading((p) => {
+        const { [hostId]: _done, ...rest } = p;
+        return rest;
+      });
+    }
+  }, []);
+
   // Returns the number of containers fetched, or -1 when served from cache
   const refreshHostResources = useCallback(async (hostId: string, force = false): Promise<number> => {
+    void refreshHostMounts(hostId, force);
     const age = Date.now() - (lastFetchRef.current[hostId] || 0);
     if (!force && age < RESOURCE_TTL_MS) return -1;
     lastFetchRef.current[hostId] = Date.now();
@@ -321,22 +372,33 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       swap(api.getNetworks(hostId), setNetworks, 'fleetdock_networks'),
     ]);
     return count;
-  }, []);
+  }, [refreshHostMounts]);
 
   const fetchFromBackend = async (opts?: { force?: boolean }) => {
     const force = opts?.force ?? true;
     setIsSyncing(true);
     try {
-      const health = await api.checkHealth();
+      // Health and host list are independent, so fetch them together
+      const [health, hostsFromApi] = await Promise.all([api.checkHealth(), api.getHosts()]);
       setIsBackendConnected(true);
       setBackendEngineInfo(health.backendEngine || 'Spring Boot 3.3.4 (Java 21)');
 
-      const remoteHosts = withLocalTags(await api.getHosts());
+      const remoteHosts = withLocalTags(hostsFromApi);
       setVms(remoteHosts);
       localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
       if (remoteHosts.length > 0) {
-        const counts = await Promise.all(remoteHosts.map((h) => refreshHostResources(h.id, force)));
+        // Hosts sync in parallel (bounded so a big fleet doesn't open hundreds of SSH sessions at once);
+        // each host updates the UI as soon as it finishes
+        const counts: number[] = new Array(remoteHosts.length).fill(0);
+        let next = 0;
+        const worker = async () => {
+          while (next < remoteHosts.length) {
+            const i = next++;
+            counts[i] = await refreshHostResources(remoteHosts[i].id, force);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(HOST_SYNC_CONCURRENCY, remoteHosts.length) }, worker));
         if (force) {
           const total = counts.reduce((sum, n) => sum + Math.max(n, 0), 0);
           addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${total} live container(s).`);
@@ -563,8 +625,8 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       totalContainers,
       runningContainers,
       stoppedContainers,
-      avgCpuPercent: Number(avgCpu.toFixed(1)),
-      avgMemoryPercent: Number(avgMem.toFixed(1)),
+      avgCpuPercent: Number(avgCpu.toFixed(2)),
+      avgMemoryPercent: Number(avgMem.toFixed(2)),
       totalMemoryGb,
       usedMemoryGb: Number(usedMemoryGb.toFixed(1)),
     };
@@ -1249,7 +1311,11 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     localStorage.removeItem('fleetdock_volumes');
     localStorage.removeItem('fleetdock_networks');
     localStorage.removeItem(FETCH_TIMES_KEY);
+    localStorage.removeItem('fleetdock_mounts');
+    localStorage.removeItem(MOUNT_FETCH_TIMES_KEY);
     lastFetchRef.current = {};
+    mountFetchRef.current = {};
+    setMounts([]);
     setVms(INITIAL_VMS);
     setContainers(INITIAL_CONTAINERS);
     setComposeStacks(INITIAL_COMPOSE_STACKS);
@@ -1266,6 +1332,9 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         containers,
         composeStacks,
         volumes,
+        mounts,
+        mountsLoading,
+        refreshHostMounts,
         networks,
         selectedVmId,
         scopeVmIds,

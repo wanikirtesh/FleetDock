@@ -1,7 +1,7 @@
 const TOKEN_KEY = 'fleetdock_auth_token';
 const USER_KEY = 'fleetdock_auth_user';
 const CACHE_OWNER_KEY = 'fleetdock_cache_owner';
-const CACHE_KEYS = ['vms', 'containers', 'compose', 'volumes', 'networks'].map((k) => `fleetdock_${k}`);
+const CACHE_KEYS = ['vms', 'containers', 'compose', 'volumes', 'networks', 'mounts', 'fetch_times', 'mount_fetch_times'].map((k) => `fleetdock_${k}`);
 
 export interface AuthUser {
   id: string;

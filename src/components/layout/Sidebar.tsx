@@ -12,9 +12,11 @@ import {
   AlertCircle,
   ExternalLink,
   Shield,
-  Layers
+  Layers,
+  FolderTree
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { fmtPct } from '../../utils/format';
 
 export const Sidebar: React.FC = () => {
   const { 
@@ -79,6 +81,12 @@ export const Sidebar: React.FC = () => {
       icon: HardDrive,
       badge: `${volumes.filter(v => isInScope(v.vmId)).length} vols`,
       badgeColor: 'sidebar-badge-slate bg-slate-700 text-slate-300',
+    },
+    {
+      id: 'mounts',
+      label: 'Mounts & Usage',
+      icon: FolderTree,
+      badge: null,
     },
     {
       id: 'settings',
@@ -167,7 +175,7 @@ export const Sidebar: React.FC = () => {
               <div>
                 <div className="flex justify-between text-slate-400 mb-0.5">
                   <span>CPU Usage</span>
-                  <span className="font-mono">{activeVm.cpuUsagePercent}%</span>
+                  <span className="font-mono">{fmtPct(activeVm.cpuUsagePercent)}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div
@@ -180,7 +188,7 @@ export const Sidebar: React.FC = () => {
               <div>
                 <div className="flex justify-between text-slate-400 mb-0.5">
                   <span>RAM Usage</span>
-                  <span className="font-mono">{activeVm.memoryUsedPercent}%</span>
+                  <span className="font-mono">{fmtPct(activeVm.memoryUsedPercent)}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div

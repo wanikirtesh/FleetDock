@@ -24,6 +24,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { fmtPct } from '../../utils/format';
 import { Container, ContainerState } from '../../types';
 
 export const ContainerList: React.FC = () => {
@@ -446,7 +447,7 @@ export const ContainerList: React.FC = () => {
                       <td className="py-3 px-4 font-mono text-xs">
                         {isRunning ? (
                           <div className="flex flex-col gap-0.5">
-                            <div className="text-cyan-300">{c.cpuPercent}% CPU</div>
+                            <div className="text-cyan-300">{fmtPct(c.cpuPercent)} CPU</div>
                             <div className="text-slate-400 text-[11px]">{c.memUsageMb} MB</div>
                           </div>
                         ) : (
