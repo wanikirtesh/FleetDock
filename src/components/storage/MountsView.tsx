@@ -65,26 +65,6 @@ export const MountsView: React.FC = () => {
     { key: 'used', dir: 'desc' }
   );
 
-  // One entry per physical filesystem backing the mounts
-  const filesystems = useMemo(() => {
-    const map = new Map<string, { vmId: string; mount: string; total: number; used: number; avail: number; mounts: number }>();
-    rows.forEach((r) => {
-      if (r.fsTotalKb == null || r.fsUsedKb == null) return;
-      const key = `${r.vmId}|${r.fsMount}|${r.fsTotalKb}`;
-      const cur = map.get(key);
-      if (cur) cur.mounts++;
-      else
-        map.set(key, {
-          vmId: r.vmId,
-          mount: r.fsMount || '/',
-          total: r.fsTotalKb,
-          used: r.fsUsedKb,
-          avail: r.fsAvailKb ?? 0,
-          mounts: 1,
-        });
-    });
-    return [...map.values()].sort((a, b) => b.used / b.total - a.used / a.total);
-  }, [rows]);
 
   // A source shared by several containers is only counted once
   const totalUsedKb = useMemo(() => {
@@ -169,37 +149,6 @@ export const MountsView: React.FC = () => {
           </div>
         ))}
       </div>
-
-      {/* Backing filesystems */}
-      {filesystems.length > 0 && (
-        <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 shadow-sm">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Backing filesystems</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filesystems.map((fs) => {
-              const pct = fs.total > 0 ? (fs.used / fs.total) * 100 : 0;
-              return (
-                <div key={`${fs.vmId}|${fs.mount}|${fs.total}`} className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-200 truncate">
-                      {hostName(fs.vmId)} <span className="text-slate-500">{fs.mount}</span>
-                    </span>
-                    <span className="text-slate-300">{fmtPct(pct)}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-slate-800 mt-2 overflow-hidden">
-                    <div className={`h-full ${barColor(pct)}`} style={{ width: `${Math.min(100, pct)}%` }} />
-                  </div>
-                  <div className="flex justify-between text-[11px] text-slate-400 font-mono mt-1.5">
-                    <span>{fmtKb(fs.used)} used</span>
-                    <span>{fmtKb(fs.avail)} free</span>
-                    <span>{fmtKb(fs.total)}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">{fs.mounts} mount(s) on this filesystem</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Mounts table */}
       <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shadow-sm">

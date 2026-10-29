@@ -26,6 +26,7 @@ export const Sidebar: React.FC = () => {
     containers, 
     composeStacks, 
     volumes, 
+    mounts,
     activeVm, 
     selectedVmId, 
     isInScope,
@@ -86,7 +87,8 @@ export const Sidebar: React.FC = () => {
       id: 'mounts',
       label: 'Mounts & Usage',
       icon: FolderTree,
-      badge: null,
+      badge: `${mounts.filter(m => isInScope(m.vmId)).length} mounts`,
+      badgeColor: 'sidebar-badge-slate bg-slate-700 text-slate-300',
     },
     {
       id: 'settings',
