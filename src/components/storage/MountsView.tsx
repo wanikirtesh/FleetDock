@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FolderTree, HardDrive, RefreshCw, Search, Server, Database, Loader2 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { fmtKb, fmtPct } from '../../utils/format';
+import { useSort, SortTh } from '../../utils/useSort';
+import { HostMount } from '../../types';
 
 type TypeFilter = 'all' | 'bind' | 'volume' | 'tmpfs';
 
@@ -12,7 +14,6 @@ export const MountsView: React.FC = () => {
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [sortBy, setSortBy] = useState<'used' | 'container' | 'host'>('used');
 
   const scopedHosts = useMemo(
     () => vms.filter((v) => isInScope(v.id)),
@@ -45,14 +46,24 @@ export const MountsView: React.FC = () => {
         (r) =>
           !q ||
           [r.containerName, r.source, r.target, r.name, hostName(r.vmId)].some((s) => (s || '').toLowerCase().includes(q))
-      )
-      .sort((a, b) => {
-        if (sortBy === 'container') return a.containerName.localeCompare(b.containerName);
-        if (sortBy === 'host') return hostName(a.vmId).localeCompare(hostName(b.vmId));
-        return (b.usedKb ?? -1) - (a.usedKb ?? -1);
-      });
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, search, typeFilter, sortBy, vms]);
+  }, [rows, search, typeFilter, vms]);
+
+  const { sorted, sort, toggle } = useSort<HostMount, 'container' | 'host' | 'type' | 'source' | 'target' | 'mode' | 'used' | 'fs'>(
+    filtered,
+    {
+      container: (r) => r.containerName,
+      host: (r) => hostName(r.vmId),
+      type: (r) => r.type,
+      source: (r) => r.source,
+      target: (r) => r.target,
+      mode: (r) => r.mode,
+      used: (r) => r.usedKb,
+      fs: (r) => (r.fsTotalKb && r.fsUsedKb != null ? r.fsUsedKb / r.fsTotalKb : null),
+    },
+    { key: 'used', dir: 'desc' }
+  );
 
   // One entry per physical filesystem backing the mounts
   const filesystems = useMemo(() => {
@@ -122,15 +133,6 @@ export const MountsView: React.FC = () => {
             <option value="bind">Bind</option>
             <option value="volume">Volume</option>
             <option value="tmpfs">tmpfs</option>
-          </select>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'used' | 'container' | 'host')}
-            className="px-2 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200"
-          >
-            <option value="used">Sort: Usage</option>
-            <option value="container">Sort: Container</option>
-            <option value="host">Sort: Host</option>
           </select>
           <button
             onClick={rescan}
@@ -216,18 +218,18 @@ export const MountsView: React.FC = () => {
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
                 <tr>
-                  <th className="py-3 px-4">Container</th>
-                  <th className="py-3 px-4">Host</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Source (host)</th>
-                  <th className="py-3 px-4">Target (container)</th>
-                  <th className="py-3 px-4">Mode</th>
-                  <th className="py-3 px-4">Used</th>
-                  <th className="py-3 px-4">Filesystem</th>
+                  <SortTh label="Container" sortKey="container" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Host" sortKey="host" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Type" sortKey="type" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Source (host)" sortKey="source" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Target (container)" sortKey="target" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Mode" sortKey="mode" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Used" sortKey="used" sort={sort} onToggle={toggle} className="py-3 px-4" />
+                  <SortTh label="Filesystem" sortKey="fs" sort={sort} onToggle={toggle} className="py-3 px-4" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
-                {filtered.map((r, i) => {
+                {sorted.map((r, i) => {
                   const fsPct = r.fsTotalKb && r.fsUsedKb != null ? (r.fsUsedKb / r.fsTotalKb) * 100 : null;
                   return (
                     <tr key={`${r.vmId}-${r.containerId}-${r.target}-${i}`} className="hover:bg-slate-850/60 transition-colors">

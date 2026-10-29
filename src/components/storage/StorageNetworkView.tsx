@@ -10,6 +10,7 @@ import {
   CheckCircle2 
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { useSort, SortTh } from '../../utils/useSort';
 
 export const StorageNetworkView: React.FC = () => {
   const { volumes, networks, vms, isInScope, scopeLabel } = useFleet();
@@ -22,6 +23,23 @@ export const StorageNetworkView: React.FC = () => {
   const getHostName = (vmId: string) => {
     return vms.find((v) => v.id === vmId)?.name || vmId;
   };
+
+  const volSort = useSort(filteredVolumes, {
+    name: (v) => v.name,
+    host: (v) => getHostName(v.vmId),
+    driver: (v) => v.driver,
+    size: (v) => v.sizeMb,
+    usedBy: (v) => v.inUseBy?.length ?? 0,
+    created: (v) => v.createdAt,
+  });
+  const netSort = useSort(filteredNetworks, {
+    name: (n) => n.name,
+    host: (n) => getHostName(n.vmId),
+    driver: (n) => n.driver,
+    subnet: (n) => n.subnet,
+    gateway: (n) => n.gateway,
+    containers: (n) => n.containersCount,
+  });
 
   return (
     <div className="space-y-4">
@@ -73,16 +91,16 @@ export const StorageNetworkView: React.FC = () => {
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
                 <tr>
-                  <th className="py-3 px-4">Volume Name</th>
-                  <th className="py-3 px-4">Host Node</th>
-                  <th className="py-3 px-4">Driver</th>
-                  <th className="py-3 px-4">Allocated Size</th>
-                  <th className="py-3 px-4">Mounted In Containers</th>
-                  <th className="py-3 px-4 text-right">Created</th>
+                  <SortTh label="Volume Name" sortKey="name" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Host Node" sortKey="host" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Driver" sortKey="driver" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Allocated Size" sortKey="size" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Mounted In Containers" sortKey="usedBy" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Created" sortKey="created" sort={volSort.sort} onToggle={volSort.toggle} className="py-3 px-4 text-right" align="right" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
-                {filteredVolumes.map((vol) => (
+                {volSort.sorted.map((vol) => (
                   <tr key={vol.name + vol.vmId} className="hover:bg-slate-850/60 transition-colors">
                     <td className="py-3 px-4 font-mono font-semibold text-slate-100 flex items-center gap-2">
                       <HardDrive className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -138,16 +156,16 @@ export const StorageNetworkView: React.FC = () => {
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
                 <tr>
-                  <th className="py-3 px-4">Network Name &amp; ID</th>
-                  <th className="py-3 px-4">Host Node</th>
-                  <th className="py-3 px-4">Driver</th>
-                  <th className="py-3 px-4">Subnet (CIDR)</th>
-                  <th className="py-3 px-4">Gateway</th>
-                  <th className="py-3 px-4 text-right">Containers Connected</th>
+                  <SortTh label="Network Name & ID" sortKey="name" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Host Node" sortKey="host" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Driver" sortKey="driver" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Subnet (CIDR)" sortKey="subnet" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Gateway" sortKey="gateway" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4" />
+                  <SortTh label="Containers Connected" sortKey="containers" sort={netSort.sort} onToggle={netSort.toggle} className="py-3 px-4 text-right" align="right" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
-                {filteredNetworks.map((net) => (
+                {netSort.sorted.map((net) => (
                   <tr key={net.id} className="hover:bg-slate-850/60 transition-colors">
                     <td className="py-3 px-4 font-mono">
                       <div className="flex items-center gap-2">

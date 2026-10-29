@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { fmtPct } from '../../utils/format';
+import { useSort, SortTh } from '../../utils/useSort';
 import { VMHost, AuthType } from '../../types';
 import { VmMetricsPanel } from './VmMetricsPanel';
 import { VmCommandPanel } from './VmCommandPanel';
@@ -48,6 +49,15 @@ export const VmHostManager: React.FC = () => {
   const [expandedMetricsId, setExpandedMetricsId] = useState<string | null>(null);
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const scopedVms = vms.filter((vm) => isInScope(vm.id));
+  const { sorted: sortedVms, sort, toggle: toggleSort } = useSort(scopedVms, {
+    host: (vm) => vm.name,
+    status: (vm) => vm.status,
+    auth: (vm) => vm.authType,
+    docker: (vm) => vm.dockerVersion,
+    compute: (vm) => vm.cpuCores,
+    usage: (vm) => vm.cpuUsagePercent,
+    tags: (vm) => (vm.tags || []).join(','),
+  });
 
   const handleTestConnection = async (id: string) => {
     setTestingId(id);
@@ -111,18 +121,18 @@ export const VmHostManager: React.FC = () => {
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase">
               <tr>
-                <th className="py-3 px-4">Host</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Auth</th>
-                <th className="py-3 px-4">Docker</th>
-                <th className="py-3 px-4">Compute</th>
-                <th className="py-3 px-4">Usage</th>
-                <th className="py-3 px-4">Tags</th>
+                <SortTh label="Host" sortKey="host" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Status" sortKey="status" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Auth" sortKey="auth" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Docker" sortKey="docker" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Compute" sortKey="compute" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Usage" sortKey="usage" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Tags" sortKey="tags" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 text-slate-300">
-              {scopedVms.map((vm) => {
+              {sortedVms.map((vm) => {
                 const hostContainers = containers.filter((c) => c.vmId === vm.id);
                 const runningCount = hostContainers.filter((c) => c.state === 'running').length;
                 const isTesting = testingId === vm.id;

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { fmtPct } from '../../utils/format';
+import { useSort, SortTh } from '../../utils/useSort';
 import { Container, ContainerState } from '../../types';
 
 export const ContainerList: React.FC = () => {
@@ -103,6 +104,15 @@ export const ContainerList: React.FC = () => {
       return true;
     });
   }, [containers, vms, selectedVmId, stateFilter, searchTerm]);
+
+  const { sorted: sortedContainers, sort, toggle: toggleSort } = useSort(filteredContainers, {
+    name: (c) => c.name,
+    host: (c) => vms.find((v) => v.id === c.vmId)?.name || c.vmId,
+    state: (c) => c.state,
+    ports: (c) => c.ports[0]?.hostPort ?? null,
+    cpu: (c) => c.cpuPercent,
+    uptime: (c) => c.statusText,
+  });
 
   // Bulk selection logic
   const handleSelectAll = () => {
@@ -338,12 +348,12 @@ export const ContainerList: React.FC = () => {
                     className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer"
                   />
                 </th>
-                <th className="py-3 px-4">Container & Image</th>
-                <th className="py-3 px-4">Target Host VM</th>
-                <th className="py-3 px-4">State</th>
-                <th className="py-3 px-4">Ports</th>
-                <th className="py-3 px-4">CPU / RAM</th>
-                <th className="py-3 px-4">Uptime</th>
+                <SortTh label="Container & Image" sortKey="name" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Target Host VM" sortKey="host" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="State" sortKey="state" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Ports" sortKey="ports" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="CPU / RAM" sortKey="cpu" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
+                <SortTh label="Uptime" sortKey="uptime" sort={sort} onToggle={toggleSort} className="py-3 px-4" />
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -369,7 +379,7 @@ export const ContainerList: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredContainers.map((c) => {
+                sortedContainers.map((c) => {
                   const isSelected = selectedIds.includes(c.id);
                   const isRunning = c.state === 'running';
                   const pending = pendingActions[c.id];
