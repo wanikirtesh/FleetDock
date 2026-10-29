@@ -98,9 +98,9 @@ public class MountService {
         for (String s : sources) command.append(' ').append(ShellSessionWrapper.quote(s));
 
         // du/df on bind paths usually needs no sudo; try plain first, then the host's sudo setting
-        String output = String.valueOf(sshDockerExecutorService.execHostCommand(host, command.toString(), false).get("output"));
+        String output = String.valueOf(sshDockerExecutorService.execHostCommandShared(host, command.toString(), false).get("output"));
         if (host.isUseSudo() && output.lines().noneMatch(l -> l.contains("|") && l.split("\\|", 3).length == 3)) {
-            output = String.valueOf(sshDockerExecutorService.execHostCommand(host, command.toString(), true).get("output"));
+            output = String.valueOf(sshDockerExecutorService.execHostCommandShared(host, command.toString(), true).get("output"));
         }
 
         for (String line : output.split("\\R")) {

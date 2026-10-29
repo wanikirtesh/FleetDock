@@ -711,7 +711,7 @@ public class DockerEngineService {
     }
 
     private String executeMetricCommand(VmHost host, String command) {
-        Map<String, Object> response = sshDockerExecutorService.execHostCommand(host, command, false);
+        Map<String, Object> response = sshDockerExecutorService.execHostCommandShared(host, command, false);
         if (!Objects.equals(response.get("exitCode"), 0)) {
             throw new IllegalStateException(String.valueOf(response.get("output")));
         }

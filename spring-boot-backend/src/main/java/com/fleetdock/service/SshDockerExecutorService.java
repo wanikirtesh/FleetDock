@@ -25,6 +25,7 @@ public class SshDockerExecutorService {
 
     private final VaultEncryptionService encryptionService;
     private final ObjectMapper objectMapper;
+    private final SharedCallCache sharedCalls = new SharedCallCache(10_000);
 
     /**
      * Checks if the host should be accessed via SSH (port 22 or SSH/Password auth)
@@ -40,6 +41,47 @@ public class SshDockerExecutorService {
      * Executes a raw docker subcommand over SSH, applying 'sudo' if configured
      */
     public String executeCommandWithFallback(VmHost host, String dockerSubCommand) throws Exception {
+        String hostKey = SharedCallCache.hostKey(host.getIp(), host.getPort());
+        if (isReadOnlyDockerCommand(dockerSubCommand)) {
+            return sharedCalls.get(hostKey, "docker " + dockerSubCommand, () -> runWithFallback(host, dockerSubCommand));
+        }
+        // Anything that can change state makes cached reads stale
+        sharedCalls.invalidateHost(hostKey);
+        try {
+            return runWithFallback(host, dockerSubCommand);
+        } finally {
+            sharedCalls.invalidateHost(hostKey);
+        }
+    }
+
+    /**
+     * Runs a read-only host command (metrics, disk usage), shared between users of the same physical host.
+     * Must not be used for commands that change anything.
+     */
+    public Map<String, Object> execHostCommandShared(VmHost host, String shellCommand, boolean withSudo) {
+        long start = System.currentTimeMillis();
+        try {
+            String hostKey = SharedCallCache.hostKey(host.getIp(), host.getPort());
+            String output = sharedCalls.get(hostKey, "sh " + withSudo + " " + shellCommand,
+                    () -> {
+                        Map<String, Object> r = execHostCommand(host, shellCommand, withSudo);
+                        if (!Objects.equals(r.get("exitCode"), 0)) throw new IllegalStateException(String.valueOf(r.get("output")));
+                        return String.valueOf(r.get("output"));
+                    });
+            return Map.of("output", output, "exitCode", 0, "latencyMs", Math.max(1, System.currentTimeMillis() - start));
+        } catch (Exception e) {
+            return Map.of("output", "Execution error: " + e.getMessage(), "exitCode", 1,
+                    "latencyMs", Math.max(1, System.currentTimeMillis() - start));
+        }
+    }
+
+    private static boolean isReadOnlyDockerCommand(String sub) {
+        String s = sub.trim();
+        return s.startsWith("ps ") || s.equals("ps") || s.startsWith("inspect ")
+                || s.startsWith("volume ls") || s.startsWith("network ls");
+    }
+
+    private String runWithFallback(VmHost host, String dockerSubCommand) throws Exception {
         try {
             return executeSshCommand(host, dockerSubCommand, host.isUseSudo());
         } catch (Exception e) {
