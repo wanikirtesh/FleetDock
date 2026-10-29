@@ -115,6 +115,10 @@ public class SshDockerExecutorService {
             }
         }
 
+        if (privateKey != null && (privateKey.isBlank() || privateKey.contains("ENCRYPTED_IN_SPRING_BOOT_VAULT")
+                || privateKey.contains("CONFIGURED_IN_VAULT"))) {
+            privateKey = null; // placeholder saved by older UI versions, not a real key
+        }
         if (privateKey != null && !privateKey.isBlank()) {
             String cleanedKey = privateKey.trim();
             if (cleanedKey.contains("\\n")) {

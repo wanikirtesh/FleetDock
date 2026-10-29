@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, ReactNode } from 'react';
 import { VMHost, Container, ComposeStack, DockerVolume, DockerNetwork, ComposeVariable, ClusterStats } from '../types';
 import { INITIAL_VMS, INITIAL_CONTAINERS, INITIAL_COMPOSE_STACKS, INITIAL_VOLUMES, INITIAL_NETWORKS } from '../data/initialData';
 import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
@@ -57,7 +57,8 @@ interface FleetContextType {
   backendEngineInfo: string;
   connectToBackend: (url?: string) => Promise<boolean>;
   seedBackendDatabase: () => Promise<void>;
-  fetchFromBackend: () => Promise<void>;
+  fetchFromBackend: (opts?: { force?: boolean }) => Promise<void>;
+  refreshHostResources: (hostId: string, force?: boolean) => Promise<number>;
 
   // Actions
   addVm: (newVm: Omit<VMHost, 'id' | 'status' | 'pingMs' | 'lastChecked' | 'cpuUsagePercent' | 'memoryUsedPercent' | 'diskUsedPercent' | 'dockerVersion' | 'apiVersion'>) => Promise<void>;
@@ -66,6 +67,7 @@ interface FleetContextType {
   testVmConnection: (id: string) => Promise<{ success: boolean; latency: number; message: string }>;
 
   startContainer: (id: string) => Promise<void>;
+  pendingActions: Record<string, ContainerAction>;
   stopContainer: (id: string) => Promise<void>;
   restartContainer: (id: string) => Promise<void>;
   pauseContainer: (id: string) => void;
@@ -91,6 +93,10 @@ interface FleetContextType {
 const FleetContext = createContext<FleetContextType | undefined>(undefined);
 
 export const GROUP_PREFIX = 'group:';
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'delete';
+const RESOURCE_TTL_MS = 60_000;
+const POLL_CHECK_MS = 30_000;
+const FETCH_TIMES_KEY = 'fleetdock_fetch_times';
 
 // A VM belongs to a group per environment and per tag, e.g. "group:env:Production", "group:tag:backend"
 export const vmGroupKeys = (vm: VMHost): string[] => [
@@ -273,7 +279,52 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     );
   };
 
-  const fetchFromBackend = async () => {
+  // Per-host freshness cache: resources fetched within RESOURCE_TTL_MS are reused (also across page reloads)
+  const lastFetchRef = useRef<Record<string, number>>(
+    (() => {
+      try { return JSON.parse(localStorage.getItem(FETCH_TIMES_KEY) || '{}'); } catch { return {}; }
+    })()
+  );
+
+  // Returns the number of containers fetched, or -1 when served from cache
+  const refreshHostResources = useCallback(async (hostId: string, force = false): Promise<number> => {
+    const age = Date.now() - (lastFetchRef.current[hostId] || 0);
+    if (!force && age < RESOURCE_TTL_MS) return -1;
+    lastFetchRef.current[hostId] = Date.now();
+    try { localStorage.setItem(FETCH_TIMES_KEY, JSON.stringify(lastFetchRef.current)); } catch { /* ignore */ }
+
+    // Replace this host's items on success; keep the cached ones if the call fails
+    const swap = async <T extends { vmId: string }>(
+      load: Promise<T[]>,
+      setter: React.Dispatch<React.SetStateAction<T[]>>,
+      key: string
+    ): Promise<number> => {
+      try {
+        const fresh = await load;
+        setter((prev) => {
+          const updated = [...prev.filter((i) => i.vmId !== hostId), ...fresh];
+          try { localStorage.setItem(key, JSON.stringify(updated)); } catch { /* ignore */ }
+          return updated;
+        });
+        return fresh.length;
+      } catch (err) {
+        console.warn(`Could not refresh ${key} for host ${hostId}:`, err);
+        delete lastFetchRef.current[hostId];
+        return 0;
+      }
+    };
+
+    const [count] = await Promise.all([
+      swap(api.getContainers(hostId), setContainers, 'fleetdock_containers'),
+      swap(api.getComposeStacks(hostId), setComposeStacks, 'fleetdock_compose'),
+      swap(api.getVolumes(hostId), setVolumes, 'fleetdock_volumes'),
+      swap(api.getNetworks(hostId), setNetworks, 'fleetdock_networks'),
+    ]);
+    return count;
+  }, []);
+
+  const fetchFromBackend = async (opts?: { force?: boolean }) => {
+    const force = opts?.force ?? true;
     setIsSyncing(true);
     try {
       const health = await api.checkHealth();
@@ -285,42 +336,11 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
       if (remoteHosts.length > 0) {
-        // Fetch real containers for each host from Docker daemon
-        const containerPromises = remoteHosts.map((h) =>
-          api.getContainers(h.id).catch(() => [])
-        );
-        const containerLists = await Promise.all(containerPromises);
-        const mergedContainers = containerLists.flat();
-        setContainers(mergedContainers);
-        localStorage.setItem('fleetdock_containers', JSON.stringify(mergedContainers));
-
-        // Fetch real compose stacks
-        const composePromises = remoteHosts.map((h) =>
-          api.getComposeStacks(h.id).catch(() => [])
-        );
-        const stackLists = await Promise.all(composePromises);
-        const mergedStacks = stackLists.flat();
-        setComposeStacks(mergedStacks);
-        localStorage.setItem('fleetdock_compose', JSON.stringify(mergedStacks));
-
-        // Fetch volumes and networks for all hosts
-        const volumePromises = remoteHosts.map((h) =>
-          api.getVolumes(h.id).catch(() => [])
-        );
-        const volumeLists = await Promise.all(volumePromises);
-        const mergedVolumes = volumeLists.flat();
-        setVolumes(mergedVolumes);
-        localStorage.setItem('fleetdock_volumes', JSON.stringify(mergedVolumes));
-
-        const networkPromises = remoteHosts.map((h) =>
-          api.getNetworks(h.id).catch(() => [])
-        );
-        const networkLists = await Promise.all(networkPromises);
-        const mergedNetworks = networkLists.flat();
-        setNetworks(mergedNetworks);
-        localStorage.setItem('fleetdock_networks', JSON.stringify(mergedNetworks));
-
-        addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${mergedContainers.length} live container(s).`);
+        const counts = await Promise.all(remoteHosts.map((h) => refreshHostResources(h.id, force)));
+        if (force) {
+          const total = counts.reduce((sum, n) => sum + Math.max(n, 0), 0);
+          addAlert('success', 'Spring Boot Synced', `Connected to backend database: ${remoteHosts.length} VM host(s) and ${total} live container(s).`);
+        }
       } else {
         // Backend DB has 0 registered hosts
         clearHostScopedData();
@@ -423,74 +443,47 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // On initial mount: test backend connection
+  // On initial mount: test backend connection; cached resources younger than the TTL are reused
   useEffect(() => {
-    fetchFromBackend();
+    fetchFromBackend({ force: false });
   }, []);
 
-  // Whenever the selection changes to a host or group, auto-query daemons for live containers, compose stacks, volumes & networks
+  // Selecting a host or group refreshes only the hosts whose cache is stale
   const groupHostIdsKey = selectedVmId.startsWith(GROUP_PREFIX)
     ? vms.filter((v) => vmGroupKeys(v).includes(selectedVmId)).map((v) => v.id).join(',')
     : '';
+  const scopeHostIds = (): string[] =>
+    selectedVmId === 'all'
+      ? vmsRef.current.map((v) => v.id)
+      : selectedVmId.startsWith(GROUP_PREFIX)
+        ? groupHostIdsKey.split(',').filter(Boolean)
+        : [selectedVmId];
+  const vmsRef = useRef(vms);
+  vmsRef.current = vms;
+  const scopeHostIdsRef = useRef(scopeHostIds);
+  scopeHostIdsRef.current = scopeHostIds;
+
   useEffect(() => {
     if (!isBackendConnected || !selectedVmId || selectedVmId === 'all') return;
-    const hostIds = selectedVmId.startsWith(GROUP_PREFIX)
-      ? groupHostIdsKey.split(',').filter(Boolean)
-      : [selectedVmId];
-    hostIds.forEach((hostId) => refreshHostResources(hostId));
+    scopeHostIdsRef.current().forEach((id) => void refreshHostResources(id));
+  }, [selectedVmId, isBackendConnected, groupHostIdsKey, refreshHostResources]);
 
-    function refreshHostResources(selectedVmId: string) {
-      api.getContainers(selectedVmId)
-        .then((live) => {
-          setContainers((prev) => {
-            const updated = [...prev.filter((c) => c.vmId !== selectedVmId), ...live];
-            localStorage.setItem('fleetdock_containers', JSON.stringify(updated));
-            return updated;
-          });
-        })
-        .catch((err) => {
-          console.warn(`Could not refresh containers for host ${selectedVmId}:`, err);
-        });
-
-      api.getComposeStacks(selectedVmId)
-        .then((stacks) => {
-          if (stacks && stacks.length > 0) {
-            setComposeStacks((prev) => {
-              const updated = [...prev.filter((s) => s.vmId !== selectedVmId), ...stacks];
-              localStorage.setItem('fleetdock_compose', JSON.stringify(updated));
-              return updated;
-            });
-          }
-        })
-        .catch((err) => {
-          console.warn(`Could not refresh compose stacks for host ${selectedVmId}:`, err);
-        });
-
-      api.getVolumes(selectedVmId)
-        .then((vols) => {
-          setVolumes((prev) => {
-            const updated = [...prev.filter((v) => v.vmId !== selectedVmId), ...vols];
-            localStorage.setItem('fleetdock_volumes', JSON.stringify(updated));
-            return updated;
-          });
-        })
-        .catch((err) => {
-          console.warn(`Could not refresh volumes for host ${selectedVmId}:`, err);
-        });
-
-      api.getNetworks(selectedVmId)
-        .then((nets) => {
-          setNetworks((prev) => {
-            const updated = [...prev.filter((n) => n.vmId !== selectedVmId), ...nets];
-            localStorage.setItem('fleetdock_networks', JSON.stringify(updated));
-            return updated;
-          });
-        })
-        .catch((err) => {
-          console.warn(`Could not refresh networks for host ${selectedVmId}:`, err);
-        });
-    }
-  }, [selectedVmId, isBackendConnected, groupHostIdsKey]);
+  // Background refresh: only while the tab is visible, only the hosts in scope, and only when stale
+  useEffect(() => {
+    if (!isBackendConnected) return;
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      scopeHostIdsRef.current().forEach((id) => void refreshHostResources(id));
+    };
+    const timer = setInterval(tick, POLL_CHECK_MS);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [isBackendConnected, refreshHostResources]);
 
   // Called by the live metrics panel (only while it is expanded) to sync readings into shared state
   const applyHostMetrics = useCallback((metric: any) => {
@@ -940,13 +933,43 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const startContainer = async (id: string) => {
+  // After a mutating action, reconcile that host with the daemon once it has settled
+  const syncHostSoon = (vmId: string) => {
+    setTimeout(() => void refreshHostResources(vmId, true), 1500);
+  };
+
+  // One in-flight action per container: blocks double clicks and drives the spinner in the UI
+  const pendingRef = useRef<Set<string>>(new Set());
+  const [pendingActions, setPendingActions] = useState<Record<string, ContainerAction>>({});
+  const runExclusive = async (id: string, action: ContainerAction, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(id)) return;
+    pendingRef.current.add(id);
+    setPendingActions((p) => ({ ...p, [id]: action }));
+    try {
+      await fn();
+    } finally {
+      pendingRef.current.delete(id);
+      setPendingActions((p) => {
+        const { [id]: _done, ...rest } = p;
+        return rest;
+      });
+    }
+  };
+
+  const startContainer = (id: string) => runExclusive(id, 'start', () => doStartContainer(id));
+  const stopContainer = (id: string) => runExclusive(id, 'stop', () => doStopContainer(id));
+  const restartContainer = (id: string) => runExclusive(id, 'restart', () => doRestartContainer(id));
+  const deleteContainer = (id: string) => runExclusive(id, 'delete', () => doDeleteContainer(id));
+
+  const doStartContainer = async (id: string) => {
     const target = containers.find((c) => c.id === id);
     if (isBackendConnected && target) {
       try {
         await api.startContainer(target.vmId, target.id);
-      } catch (err) {
-        console.warn('Backend startContainer failed:', err);
+        syncHostSoon(target.vmId);
+      } catch (err: any) {
+        addAlert('error', 'Start Failed', `Could not start '${target.name}': ${err?.message || 'backend error'}`);
+        return;
       }
     }
 
@@ -967,13 +990,15 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addAlert('success', 'Container Started', `Container '${target?.name || id}' is now running.`);
   };
 
-  const stopContainer = async (id: string) => {
+  const doStopContainer = async (id: string) => {
     const target = containers.find((c) => c.id === id);
     if (isBackendConnected && target) {
       try {
         await api.stopContainer(target.vmId, target.id);
-      } catch (err) {
-        console.warn('Backend stopContainer failed:', err);
+        syncHostSoon(target.vmId);
+      } catch (err: any) {
+        addAlert('error', 'Stop Failed', `Could not stop '${target.name}': ${err?.message || 'backend error'}`);
+        return;
       }
     }
 
@@ -994,13 +1019,15 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addAlert('warning', 'Container Stopped', `Sent SIGTERM to container '${target?.name || id}'. Stopped.`);
   };
 
-  const restartContainer = async (id: string) => {
+  const doRestartContainer = async (id: string) => {
     const target = containers.find((c) => c.id === id);
     if (isBackendConnected && target) {
       try {
         await api.restartContainer(target.vmId, target.id);
-      } catch (err) {
-        console.warn('Backend restart failed:', err);
+        syncHostSoon(target.vmId);
+      } catch (err: any) {
+        addAlert('error', 'Restart Failed', `Could not restart '${target.name}': ${err?.message || 'backend error'}`);
+        return;
       }
     }
 
@@ -1039,13 +1066,15 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addAlert('info', 'State Updated', `'${target?.name}' pause state updated.`);
   };
 
-  const deleteContainer = async (id: string) => {
+  const doDeleteContainer = async (id: string) => {
     const target = containers.find((c) => c.id === id);
     if (isBackendConnected && target) {
       try {
         await api.deleteContainer(target.vmId, target.id);
-      } catch (err) {
-        console.warn('Backend deleteContainer failed:', err);
+        syncHostSoon(target.vmId);
+      } catch (err: any) {
+        addAlert('error', 'Delete Failed', `Could not remove '${target.name}': ${err?.message || 'backend error'}`);
+        return;
       }
     }
 
@@ -1061,6 +1090,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       try {
         const created = await api.deployContainer(data.vmId, data);
         setContainers((prev) => [created, ...prev]);
+        syncHostSoon(data.vmId);
         addAlert('success', 'Container Deployed', `New container '${created.name}' launched via Spring Boot API.`);
         return;
       } catch (err) {
@@ -1218,6 +1248,8 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     localStorage.removeItem('fleetdock_compose');
     localStorage.removeItem('fleetdock_volumes');
     localStorage.removeItem('fleetdock_networks');
+    localStorage.removeItem(FETCH_TIMES_KEY);
+    lastFetchRef.current = {};
     setVms(INITIAL_VMS);
     setContainers(INITIAL_CONTAINERS);
     setComposeStacks(INITIAL_COMPOSE_STACKS);
@@ -1273,11 +1305,13 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         connectToBackend,
         seedBackendDatabase,
         fetchFromBackend,
+        refreshHostResources,
         addVm,
         updateVm,
         deleteVm,
         testVmConnection,
         startContainer,
+        pendingActions,
         stopContainer,
         restartContainer,
         pauseContainer,

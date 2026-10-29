@@ -20,7 +20,8 @@ import {
   RefreshCw,
   ExternalLink,
   SlidersHorizontal,
-  Edit3
+  Edit3,
+  Loader2
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { Container, ContainerState } from '../../types';
@@ -38,6 +39,7 @@ export const ContainerList: React.FC = () => {
     stopContainer, 
     restartContainer, 
     pauseContainer, 
+    pendingActions,
     deleteContainer, 
     bulkContainerAction,
     setSelectedContainerForLogs,
@@ -45,6 +47,7 @@ export const ContainerList: React.FC = () => {
     setSelectedContainerForInspect,
     setIsDeployModalOpen,
     fetchFromBackend,
+    refreshHostResources,
     isSyncing
   } = useFleet();
 
@@ -52,6 +55,16 @@ export const ContainerList: React.FC = () => {
   const [stateFilter, setStateFilter] = useState<'all' | ContainerState>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  const [queryingScope, setQueryingScope] = useState(false);
+  const queryScopedHosts = async () => {
+    setQueryingScope(true);
+    try {
+      await Promise.all(vms.filter((v) => isInScope(v.id)).map((v) => refreshHostResources(v.id, true)));
+    } finally {
+      setQueryingScope(false);
+    }
+  };
 
   // Containers within the selected host/group; used for the filter badge counts
   const scopedContainers = useMemo(
@@ -226,13 +239,13 @@ export const ContainerList: React.FC = () => {
 
           {/* Refresh from VM Button */}
           <button
-            onClick={() => fetchFromBackend()}
-            disabled={isSyncing}
-            title="Query remote VM Docker daemon for live container states"
+            onClick={() => void queryScopedHosts()}
+            disabled={isSyncing || queryingScope}
+            title="Query the Docker daemon of the selected/filtered VM host(s) for live container states"
             className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-cyan-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Fetching...' : 'Query VM Daemon'}</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing || queryingScope ? 'animate-spin' : ''}`} />
+            <span>{isSyncing || queryingScope ? 'Fetching...' : 'Query VM Daemon'}</span>
           </button>
 
           {/* Deploy Container Button */}
@@ -358,13 +371,14 @@ export const ContainerList: React.FC = () => {
                 filteredContainers.map((c) => {
                   const isSelected = selectedIds.includes(c.id);
                   const isRunning = c.state === 'running';
+                  const pending = pendingActions[c.id];
 
                   return (
                     <tr
                       key={c.id}
                       className={`hover:bg-slate-850/60 transition-colors ${
                         isSelected ? 'bg-cyan-950/20' : ''
-                      }`}
+                      } ${pending ? 'opacity-70' : ''}`}
                     >
                       {/* Checkbox */}
                       <td className="py-3 px-4">
@@ -450,26 +464,34 @@ export const ContainerList: React.FC = () => {
                         <div className="flex items-center justify-end gap-1">
                           
                           {/* Start/Stop/Restart toggles */}
+                          {pending && (
+                            <span className="text-[11px] text-cyan-300 font-mono mr-1 animate-pulse">
+                              {{ start: 'Starting…', stop: 'Stopping…', restart: 'Restarting…', delete: 'Removing…' }[pending]}
+                            </span>
+                          )}
                           {isRunning ? (
                             <>
                               <button
                                 onClick={() => stopContainer(c.id)}
+                                disabled={!!pending}
                                 title="Stop Container (SIGTERM)"
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               >
-                                <Square className="w-3.5 h-3.5" />
+                                {pending === 'stop' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" /> : <Square className="w-3.5 h-3.5" />}
                               </button>
                               <button
                                 onClick={() => restartContainer(c.id)}
+                                disabled={!!pending}
                                 title="Restart Container"
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-colors"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               >
-                                <RotateCw className="w-3.5 h-3.5" />
+                                {pending === 'restart' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" /> : <RotateCw className="w-3.5 h-3.5" />}
                               </button>
                               <button
                                 onClick={() => pauseContainer(c.id)}
+                                disabled={!!pending}
                                 title={c.state === 'paused' ? 'Resume' : 'Pause'}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <Pause className="w-3.5 h-3.5" />
                               </button>
@@ -477,10 +499,11 @@ export const ContainerList: React.FC = () => {
                           ) : (
                             <button
                               onClick={() => startContainer(c.id)}
+                              disabled={!!pending}
                               title="Start Container"
-                              className="p-1.5 rounded-lg text-emerald-400 hover:bg-slate-800 transition-colors"
+                              className="p-1.5 rounded-lg text-emerald-400 hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              <Play className="w-3.5 h-3.5" />
+                              {pending === 'start' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                             </button>
                           )}
 
@@ -518,10 +541,11 @@ export const ContainerList: React.FC = () => {
                                 deleteContainer(c.id);
                               }
                             }}
+                            disabled={!!pending}
                             title="Remove Container"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {pending === 'delete' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" /> : <Trash2 className="w-3.5 h-3.5" />}
                           </button>
 
                         </div>

@@ -89,7 +89,7 @@ export const AddVmModal: React.FC = () => {
         useSudo,
         authPayload: {
           username: sshUser.trim(),
-          privateKey: sshPrivateKey || '-----BEGIN RSA PRIVATE KEY-----\n[ENCRYPTED_IN_SPRING_BOOT_VAULT]\n-----END RSA PRIVATE KEY-----',
+          privateKey: sshPrivateKey.trim() || undefined,
           passphrase: sshPassphrase,
           password: password || undefined,
           tlsCa,
