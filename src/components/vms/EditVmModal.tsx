@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { AuthType } from '../../types';
+import { VmIcon, VmIconPicker, DEFAULT_VM_ICON } from './vmIcons';
 
 export const EditVmModal: React.FC = () => {
   const { 
@@ -36,6 +37,7 @@ export const EditVmModal: React.FC = () => {
   const [ip, setIp] = useState('');
   const [port, setPort] = useState(22);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Development' | 'Edge'>('Production');
+  const [icon, setIcon] = useState(DEFAULT_VM_ICON);
   const [tagsInput, setTagsInput] = useState('');
 
   // Auth Type
@@ -63,6 +65,7 @@ export const EditVmModal: React.FC = () => {
       setIp(editingVm.ip || '');
       setPort(editingVm.port || 22);
       setEnvironment(editingVm.environment || 'Production');
+      setIcon(editingVm.icon || DEFAULT_VM_ICON);
       setTagsInput(editingVm.tags?.join(', ') || '');
       setAuthType(editingVm.authType || 'ssh_key');
       setUseSudo(editingVm.useSudo ?? editingVm.authPayload?.useSudo ?? true);
@@ -143,6 +146,7 @@ export const EditVmModal: React.FC = () => {
           useSudo,
         },
         environment,
+        icon,
         tags,
       });
 
@@ -169,7 +173,7 @@ export const EditVmModal: React.FC = () => {
         <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              <Server className="w-5 h-5" />
+              <VmIcon icon={icon} className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -236,6 +240,11 @@ export const EditVmModal: React.FC = () => {
                   <option value="Edge">Edge</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Icon</label>
+              <VmIconPicker value={icon} onChange={setIcon} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

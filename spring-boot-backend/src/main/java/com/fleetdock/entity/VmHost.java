@@ -39,6 +39,9 @@ public class VmHost {
     @Column(nullable = false)
     private String environment; // Production, Staging, Development, Edge
 
+    @Column(length = 32)
+    private String icon; // key of a UI icon preset, null = default
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "vm_host_tags", joinColumns = @JoinColumn(name = "vm_host_id"))
     @Column(name = "tag")

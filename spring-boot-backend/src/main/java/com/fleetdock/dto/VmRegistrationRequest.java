@@ -22,6 +22,7 @@ public class VmRegistrationRequest {
     private AuthType authType = AuthType.SSH_KEY;
 
     private String environment = "Production";
+    private String icon;
     private List<String> tags;
     private String os = "Ubuntu 24.04 LTS";
     private String arch = "x86_64";

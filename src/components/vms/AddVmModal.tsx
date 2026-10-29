@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
 import { AuthType } from '../../types';
+import { VmIcon, VmIconPicker, DEFAULT_VM_ICON } from './vmIcons';
 
 export const AddVmModal: React.FC = () => {
   const { isAddVmModalOpen, setIsAddVmModalOpen, addVm, setActiveTab } = useFleet();
@@ -25,6 +26,7 @@ export const AddVmModal: React.FC = () => {
   const [port, setPort] = useState(22);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Development' | 'Edge'>('Production');
   const [tagsInput, setTagsInput] = useState('docker, backend');
+  const [icon, setIcon] = useState(DEFAULT_VM_ICON);
 
   // Auth Type
   const [authType, setAuthType] = useState<AuthType>('ssh_key');
@@ -99,6 +101,7 @@ export const AddVmModal: React.FC = () => {
           useSudo,
         },
         environment,
+        icon,
         os: 'Unknown',
         arch: 'Unknown',
         cpuCores: 0,
@@ -124,7 +127,7 @@ export const AddVmModal: React.FC = () => {
         <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              <Server className="w-5 h-5" />
+              <VmIcon icon={icon} className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-semibold text-sm text-slate-100">
@@ -183,6 +186,11 @@ export const AddVmModal: React.FC = () => {
                   <option value="Edge">Edge IoT</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Icon</label>
+              <VmIconPicker value={icon} onChange={setIcon} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

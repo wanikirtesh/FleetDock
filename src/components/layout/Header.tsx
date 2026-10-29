@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useFleet, GROUP_PREFIX } from '../../context/FleetContext';
 import { ThemeToggle } from './ThemeToggle';
+import { VmIcon } from '../vms/vmIcons';
 import { useAuth } from '../../context/AuthContext';
 
 export const Header: React.FC = () => {
@@ -66,7 +67,7 @@ export const Header: React.FC = () => {
         {/* VM Selector Switcher */}
         <div className="flex items-center gap-3">
           <div className="flex items-center bg-slate-800/80 border border-slate-700/80 rounded-lg px-3 py-1.5 text-sm">
-            <Server className="w-4 h-4 text-cyan-400 mr-2 shrink-0" />
+            <VmIcon icon={vms.find((v) => v.id === selectedVmId)?.icon} className="w-4 h-4 text-cyan-400 mr-2 shrink-0" />
             <span className="text-xs text-slate-400 mr-2 hidden md:inline">Target Host:</span>
             <select
               value={selectedVmId}

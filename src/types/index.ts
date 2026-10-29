@@ -23,6 +23,7 @@ export interface VMHost {
     useSudo?: boolean;
   };
   environment: 'Production' | 'Staging' | 'Development' | 'Edge';
+  icon?: string;
   os: string;
   arch: string;
   dockerVersion: string;

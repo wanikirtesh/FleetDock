@@ -60,6 +60,7 @@ public class VmHostService {
                 .port(request.getPort())
                 .authType(request.getAuthType())
                 .environment(request.getEnvironment() != null ? request.getEnvironment() : "Production")
+                .icon(normalizeIcon(request.getIcon()))
                 .os(request.getOs() != null ? request.getOs() : "Linux")
                 .arch(request.getArch() != null ? request.getArch() : "x86_64")
                 .dockerVersion("Pending verification")
@@ -96,6 +97,9 @@ public class VmHostService {
         existing.setUseSudo(request.isUseSudo());
         if (request.getEnvironment() != null && !request.getEnvironment().isBlank()) {
             existing.setEnvironment(request.getEnvironment());
+        }
+        if (request.getIcon() != null) {
+            existing.setIcon(normalizeIcon(request.getIcon()));
         }
         if (request.getTags() != null) {
             existing.setTags(normalizeTags(request.getTags()));
@@ -157,6 +161,12 @@ public class VmHostService {
         }
 
         return vmHostRepository.save(existing);
+    }
+
+    private String normalizeIcon(String icon) {
+        if (icon == null) return null;
+        String v = icon.trim().toLowerCase();
+        return v.matches("[a-z0-9_-]{1,32}") ? v : null;
     }
 
     private List<String> normalizeTags(List<String> tags) {

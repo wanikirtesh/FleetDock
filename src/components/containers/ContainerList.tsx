@@ -24,6 +24,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { VmIcon } from '../vms/vmIcons';
 import { fmtPct } from '../../utils/format';
 import { useSort, SortTh } from '../../utils/useSort';
 import { Container, ContainerState } from '../../types';
@@ -425,7 +426,7 @@ export const ContainerList: React.FC = () => {
                       {/* Target Host */}
                       <td className="py-3 px-4 font-mono text-xs text-slate-300">
                         <div className="flex items-center gap-1.5">
-                          <Server className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <VmIcon icon={vms.find((v) => v.id === c.vmId)?.icon} className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                           <span className="truncate max-w-[130px]">{getHostName(c.vmId)}</span>
                         </div>
                       </td>

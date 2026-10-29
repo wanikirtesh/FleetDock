@@ -90,7 +90,7 @@ app.get('/api/v1/hosts', (req, res) => {
 });
 
 app.post('/api/v1/hosts/register', (req, res) => {
-  const { name, ip, port, authType, useSudo, environment, os, arch, cpuCores, memoryGb, diskGb } = req.body;
+  const { name, ip, port, authType, useSudo, environment, icon, os, arch, cpuCores, memoryGb, diskGb } = req.body;
   const newVm = {
     id: `vm-${Date.now().toString(36)}`,
     name: name || 'new-host',
@@ -99,7 +99,7 @@ app.post('/api/v1/hosts/register', (req, res) => {
     authType: authType || 'SSH_KEY',
     useSudo: useSudo !== undefined ? Boolean(useSudo) : true,
     environment: environment || 'Production',
-    os: os || 'Linux',
+    icon: icon || null,
     arch: arch || 'x86_64',
     dockerVersion: 'Pending verification',
     apiVersion: '',

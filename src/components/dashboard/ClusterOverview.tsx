@@ -18,6 +18,7 @@ import {
   Edit3
 } from 'lucide-react';
 import { useFleet } from '../../context/FleetContext';
+import { VmIcon } from '../vms/vmIcons';
 import { fmtPct } from '../../utils/format';
 import { VMHost } from '../../types';
 
@@ -215,7 +216,7 @@ export const ClusterOverview: React.FC = () => {
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-start gap-3">
                     <div className="p-2.5 rounded-lg bg-slate-800 border border-slate-700/80 group-hover:border-cyan-500/40 transition-colors">
-                      <Server className="w-5 h-5 text-cyan-400" />
+                      <VmIcon icon={vm.icon} className="w-5 h-5 text-cyan-400" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
