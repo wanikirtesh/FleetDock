@@ -70,14 +70,14 @@ export const Sidebar: React.FC = () => {
       id: 'vms',
       label: 'VM Hosts & Auth',
       icon: Server,
-      badge: `${vms.length} Nodes`,
+      badge: `${vms.filter(v => isInScope(v.id)).length} Nodes`,
       badgeColor: 'sidebar-badge-indigo bg-indigo-500/20 text-indigo-400 border border-indigo-500/30',
     },
     {
       id: 'storage_network',
       label: 'Volumes & Networks',
       icon: HardDrive,
-      badge: `${volumes.length} vols`,
+      badge: `${volumes.filter(v => isInScope(v.vmId)).length} vols`,
       badgeColor: 'sidebar-badge-slate bg-slate-700 text-slate-300',
     },
     {

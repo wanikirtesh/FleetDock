@@ -258,6 +258,21 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setVolumes((p) => prune('fleetdock_volumes', p));
     setNetworks((p) => prune('fleetdock_networks', p));
   }, [vms]);
+  // Hosts tagged before tags were persisted in the DB have none server-side; fall back to the local labels
+  const withLocalTags = (hosts: VMHost[]): VMHost[] => {
+    const known = new Map<string, string[]>();
+    try {
+      const stored: VMHost[] = JSON.parse(localStorage.getItem('fleetdock_vms') || '[]');
+      stored.forEach((v) => known.set(v.id, v.tags || []));
+    } catch {
+      // ignore corrupt cache
+    }
+    vms.forEach((v) => known.set(v.id, v.tags || []));
+    return hosts.map((h) =>
+      h.tags && h.tags.length > 0 ? h : { ...h, tags: known.get(h.id) ?? [] }
+    );
+  };
+
   const fetchFromBackend = async () => {
     setIsSyncing(true);
     try {
@@ -265,7 +280,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setIsBackendConnected(true);
       setBackendEngineInfo(health.backendEngine || 'Spring Boot 3.3.4 (Java 21)');
 
-      const remoteHosts = await api.getHosts();
+      const remoteHosts = withLocalTags(await api.getHosts());
       setVms(remoteHosts);
       localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
@@ -333,7 +348,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setDataSourceState('spring_boot');
       localStorage.setItem('fleetdock_datasource', 'spring_boot');
 
-      const remoteHosts = await api.getHosts();
+      const remoteHosts = withLocalTags(await api.getHosts());
       setVms(remoteHosts);
       localStorage.setItem('fleetdock_vms', JSON.stringify(remoteHosts));
 
@@ -734,6 +749,7 @@ export const FleetProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           authType: updates.authType ? updates.authType.toUpperCase() : undefined,
           useSudo: updates.useSudo ?? updates.authPayload?.useSudo ?? true,
           environment: updates.environment,
+          tags: updates.tags,
           os: updates.os,
           arch: updates.arch,
           cpuCores: updates.cpuCores,

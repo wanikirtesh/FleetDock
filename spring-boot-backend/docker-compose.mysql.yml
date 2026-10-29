@@ -1,0 +1,38 @@
+services:
+  fleetdock-backend:
+    build: .
+    container_name: fleetdock-spring-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/${MYSQL_DATABASE:-fleetdock}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-fleetdock}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-fleetdock_dev_password}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?Set VAULT_MASTER_KEY in your environment}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+
+  mysql-db:
+    image: mysql:8.4
+    container_name: fleetdock-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-fleetdock}
+      MYSQL_USER: ${MYSQL_USER:-fleetdock}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-fleetdock_dev_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in your environment}
+    ports:
+      - "3306:3306"
+    volumes:
+      - fleetdock_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fleetdock_mysql_data:

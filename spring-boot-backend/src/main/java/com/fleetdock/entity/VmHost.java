@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "vm_hosts")
@@ -36,6 +38,12 @@ public class VmHost {
 
     @Column(nullable = false)
     private String environment; // Production, Staging, Development, Edge
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "vm_host_tags", joinColumns = @JoinColumn(name = "vm_host_id"))
+    @Column(name = "tag")
+    @Builder.Default
+    private List<String> tags = new ArrayList<>();
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     private String ownerId;

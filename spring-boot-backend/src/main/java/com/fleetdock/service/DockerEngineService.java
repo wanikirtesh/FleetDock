@@ -505,10 +505,10 @@ public class DockerEngineService {
         }
     }
 
-    public Map<String, Object> execCommand(String vmId, String containerId, String command) {
+    public Map<String, Object> execCommand(String vmId, String containerId, String command, String cwd) {
         VmHost host = vmHostService.getHostById(vmId);
         if (sshDockerExecutorService.isSshHost(host)) {
-            return sshDockerExecutorService.execCommand(host, containerId, command);
+            return sshDockerExecutorService.execCommand(host, containerId, command, cwd);
         }
 
         try {
@@ -516,7 +516,7 @@ public class DockerEngineService {
             ExecCreateCmdResponse execCreate = client.execCreateCmd(containerId)
                     .withAttachStdout(true)
                     .withAttachStderr(true)
-                    .withCmd("sh", "-c", command)
+                    .withCmd("sh", "-c", ShellSessionWrapper.wrap(command, cwd))
                     .exec();
 
             StringBuilder output = new StringBuilder();
@@ -549,20 +549,17 @@ public class DockerEngineService {
 
             latch.await(30L, TimeUnit.SECONDS);
 
-            InspectExecResponse inspect = client.inspectExecCmd(execCreate.getId()).exec();
-            int exitCode = inspect.getExitCode() != null ? inspect.getExitCode() : 0;
-
-            return Map.of("output", output.toString(), "exitCode", exitCode);
+            return ShellSessionWrapper.parse(output.toString(), cwd);
         } catch (Exception e) {
             log.error("Docker client exec failed for {}: {}", containerId, e.getMessage());
             return Map.of("output", "Exec failed: " + e.getMessage(), "exitCode", 1);
         }
     }
 
-    public Map<String, Object> execHostCommand(String vmId, String command, boolean useSudo) {
+    public Map<String, Object> execHostCommand(String vmId, String command, boolean useSudo, String cwd) {
         VmHost host = vmHostService.getHostById(vmId);
         if (sshDockerExecutorService.isSshHost(host)) {
-            return sshDockerExecutorService.execHostCommand(host, command, useSudo || host.isUseSudo());
+            return sshDockerExecutorService.execHostShellCommand(host, command, useSudo || host.isUseSudo(), cwd);
         }
         return Map.of(
                 "output", "Host " + host.getName() + " (" + host.getIp() + ") does not have direct SSH terminal access configured.",

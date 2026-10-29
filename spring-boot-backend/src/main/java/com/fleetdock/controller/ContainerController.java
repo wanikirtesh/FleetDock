@@ -97,7 +97,7 @@ public class ContainerController {
         if (command.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("output", "Empty command", "exitCode", 1));
         }
-        return ResponseEntity.ok(dockerEngineService.execCommand(vmId, containerId, command));
+        return ResponseEntity.ok(dockerEngineService.execCommand(vmId, containerId, command, request.get("cwd")));
     }
 
     @GetMapping("/volumes")

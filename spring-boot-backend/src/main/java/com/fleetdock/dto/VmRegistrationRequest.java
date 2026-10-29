@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class VmRegistrationRequest {
 
@@ -20,6 +22,7 @@ public class VmRegistrationRequest {
     private AuthType authType = AuthType.SSH_KEY;
 
     private String environment = "Production";
+    private List<String> tags;
     private String os = "Ubuntu 24.04 LTS";
     private String arch = "x86_64";
 

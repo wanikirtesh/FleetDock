@@ -173,6 +173,8 @@ app.post('/api/v1/hosts/:id/exec', async (req, res) => {
   const { id } = req.params;
   const command = (req.body.command || '').trim();
   const useSudo = Boolean(req.body.useSudo);
+  const homeDir = useSudo ? '/root' : `/home/${(registeredHosts.find((v) => v.id === id)?.authPayload?.username) || 'ubuntu'}`;
+  let cwd = typeof req.body.cwd === 'string' && req.body.cwd ? req.body.cwd : homeDir;
 
   if (!command) {
     return res.status(400).json({ output: 'Command cannot be empty', exitCode: 1 });
@@ -185,7 +187,7 @@ app.post('/api/v1/hosts/:id/exec', async (req, res) => {
       const springRes = await fetch(`http://127.0.0.1:8080/api/v1/hosts/${id}/exec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, useSudo }),
+        body: JSON.stringify({ command, useSudo, cwd: req.body.cwd }),
       });
       if (springRes.ok) {
         return res.json(await springRes.json());
@@ -207,7 +209,15 @@ app.post('/api/v1/hosts/:id/exec', async (req, res) => {
   let output = '';
   let exitCode = 0;
 
-  if (cmdLower === 'uptime') {
+  if (cmdLower === 'pwd') {
+    output = cwd;
+  } else if (cmdLower === 'cd' || cmdLower.startsWith('cd ')) {
+    const target = command.slice(2).trim();
+    if (target === '' || target === '~') cwd = homeDir;
+    else if (target === '..') cwd = cwd.split('/').slice(0, -1).join('/') || '/';
+    else if (target.startsWith('/')) cwd = target;
+    else cwd = `${cwd.replace(/\/$/, '')}/${target}`;
+  } else if (cmdLower === 'uptime') {
     output = ` 16:34:10 up 28 days,  4:12,  2 users,  load average: 0.24, 0.18, 0.14`;
   } else if (cmdLower === 'uname -a' || cmdLower.startsWith('uname')) {
     output = `Linux ${hostname} 6.8.0-45-generic #45-Ubuntu SMP PREEMPT_DYNAMIC Wed Sep 11 15:25:05 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux`;
@@ -254,10 +264,10 @@ app.post('/api/v1/hosts/:id/exec', async (req, res) => {
   } else if (cmdLower === 'help') {
     output = `FleetDock VM Host Console\nAvailable system tools: docker, systemctl, journalctl, df, free, ip, netstat, ps, uname, uptime, whoami, id, cat, ls, ping, curl.`;
   } else {
-    output = `[${hostname}:~]$ ${command}\n[Executed on host ${ip} with exit code 0]`;
+    output = `${command}: executed on ${hostname} (${ip}) with exit code 0`;
   }
 
-  res.json({ output, exitCode });
+  res.json({ output, exitCode, cwd });
 });
 
 // Container management
@@ -600,7 +610,7 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
       const springRes = await fetch(`http://127.0.0.1:8080/api/v1/hosts/${req.params.vmId}/containers/${req.params.cid}/exec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ command, cwd: req.body.cwd }),
       });
       if (springRes.ok) {
         const data = await springRes.json();
@@ -620,7 +630,7 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
           AttachStdout: true,
           AttachStderr: true,
           Tty: false,
-          Cmd: ['sh', '-c', command],
+          Cmd: ['sh', '-c', `exec 2>&1; cd '${String(req.body.cwd || '/').replace(/'/g, `'\\''`)}' 2>/dev/null; ${command}\n__fd_rc=$?; printf '\\n__FD_CWD__%s\\n__FD_RC__%s\\n' "$(pwd)" "$__fd_rc"`],
         }),
         signal: AbortSignal.timeout(3000),
       });
@@ -635,7 +645,15 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
         if (startRes.ok) {
           const arrBuf = await startRes.arrayBuffer();
           const lines = demuxDockerLogs(Buffer.from(arrBuf));
-          return res.json({ output: lines.join('\n') || '[Process completed with empty output]', exitCode: 0 });
+          const text = lines.join('\n');
+          const idx = text.lastIndexOf('\n__FD_CWD__');
+          if (idx >= 0) {
+            const meta = text.slice(idx + 1);
+            const newCwd = /__FD_CWD__(.*)/.exec(meta)?.[1] ?? '/';
+            const rc = parseInt(/__FD_RC__(\d+)/.exec(meta)?.[1] ?? '0', 10);
+            return res.json({ output: text.slice(0, idx), exitCode: rc, cwd: newCwd });
+          }
+          return res.json({ output: text || '[Process completed with empty output]', exitCode: 0 });
         }
       }
     } catch {}
@@ -652,8 +670,16 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
   let output = '';
   let exitCode = 0;
 
+  let cwd = typeof req.body.cwd === 'string' && req.body.cwd ? req.body.cwd : '/';
+
   if (cmdLower === 'pwd') {
-    output = '/';
+    output = cwd;
+  } else if (cmdLower === 'cd' || cmdLower.startsWith('cd ')) {
+    const target = command.slice(2).trim();
+    if (target === '' || target === '~') cwd = '/root';
+    else if (target === '..') cwd = cwd.split('/').slice(0, -1).join('/') || '/';
+    else if (target.startsWith('/')) cwd = target;
+    else cwd = `${cwd.replace(/\/$/, '')}/${target}`;
   } else if (cmdLower === 'whoami') {
     output = 'root';
   } else if (cmdLower === 'id') {
@@ -704,10 +730,10 @@ app.post('/api/v1/hosts/:vmId/containers/:cid/exec', async (req, res) => {
   } else if (cmdLower === 'help') {
     output = `FleetDock Container Shell\nType any standard Linux command (ps, env, df -h, ls -la, netstat -tlpn, whoami, ip a, date, uptime, curl, etc.)`;
   } else {
-    output = `root@${cName}:/# ${command}\n[Executed command in container namespace: exit 0]`;
+    output = `${command}: executed in container ${cName} with exit code 0`;
   }
 
-  res.json({ output, exitCode });
+  res.json({ output, exitCode, cwd });
 });
 
 // Volumes & Networks

@@ -37,7 +37,8 @@ The Java Spring Boot backend is located in the `/spring-boot-backend` directory.
 
 Requirements: **Java 21 JDK** and **Maven 3.9+** (or Docker)
 
-#### Option A: Quick run with Maven (Embedded H2 Database, Zero Configuration)
+#### Option A: Quick run with local MySQL
+The backend defaults to MySQL at `localhost:3306`, database `fleetdock`, user `root`, and a blank password. Set `SPRING_DATASOURCE_USERNAME` and `SPRING_DATASOURCE_PASSWORD` before starting Maven if your local credentials differ.
 ```bash
 cd spring-boot-backend
 
@@ -47,13 +48,19 @@ mvn clean spring-boot:run
 The Spring Boot server will start at:
 👉 **`http://localhost:8080`**
 - Actuator Health check: `http://localhost:8080/api/v1/health`
-- H2 Database Console: `http://localhost:8080/h2-console` (JDBC URL: `jdbc:h2:mem:fleetdock`, User: `sa`, Password: *blank*)
 
 #### Option B: Run with Docker Compose (Spring Boot + PostgreSQL 16)
 ```bash
 cd spring-boot-backend
 docker compose up --build -d
 ```
+
+#### Option C: Run with Docker Compose (Spring Boot + MySQL 8.4)
+Set `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, and `VAULT_MASTER_KEY`, then run:
+```bash
+docker compose -f docker-compose.mysql.yml up --build -d
+```
+The backend can also connect to an existing MySQL instance using the standard `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` settings.
 
 ---
 

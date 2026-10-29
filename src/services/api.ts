@@ -79,7 +79,7 @@ export const api = {
       cpuUsagePercent: item.cpuUsagePercent ?? 0,
       memoryUsedPercent: item.memoryUsedPercent ?? 0,
       diskUsedPercent: item.diskUsedPercent ?? 0,
-      tags: item.tags || ['docker', 'backend'],
+      tags: item.tags || [],
       lastChecked: 'Just now',
       authPayload: {
         username: item.authCredential?.username || 'root',
@@ -123,7 +123,7 @@ export const api = {
       cpuUsagePercent: item.cpuUsagePercent ?? 0,
       memoryUsedPercent: item.memoryUsedPercent ?? 0,
       diskUsedPercent: item.diskUsedPercent ?? 0,
-      tags: hostData.tags || item.tags || ['docker'],
+      tags: item.tags || hostData.tags || [],
       lastChecked: 'Just now',
       authPayload: {
         username: item.authCredential?.username || hostData.username || 'root',
@@ -270,11 +270,11 @@ export const api = {
     return `${proto}//${window.location.host}/api/v1/ws/logs?vmId=${encodeURIComponent(vmId)}&containerId=${encodeURIComponent(containerId)}&tail=${tail}`;
   },
 
-  execCommand: async (vmId: string, containerId: string, command: string): Promise<{ output: string; exitCode: number }> => {
+  execCommand: async (vmId: string, containerId: string, command: string, cwd?: string): Promise<{ output: string; exitCode: number; cwd?: string }> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/containers/${containerId}/exec`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command }),
+      body: JSON.stringify({ command, cwd }),
     });
     if (!res.ok) {
       throw new Error(`Execution request failed (HTTP ${res.status})`);
@@ -387,11 +387,11 @@ export const api = {
     return res.json();
   },
 
-  execHostCommand: async (vmId: string, command: string, useSudo: boolean = false): Promise<{ output: string; exitCode: number }> => {
+  execHostCommand: async (vmId: string, command: string, useSudo: boolean = false, cwd?: string): Promise<{ output: string; exitCode: number; cwd?: string }> => {
     const res = await fetch(buildUrl(`/api/v1/hosts/${vmId}/exec`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, useSudo }),
+      body: JSON.stringify({ command, useSudo, cwd }),
     });
     if (!res.ok) {
       throw new Error(`Host command failed with status ${res.status}`);

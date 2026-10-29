@@ -79,7 +79,8 @@ public class VmHostController {
             @RequestBody Map<String, Object> request) {
         String command = (String) request.getOrDefault("command", "");
         boolean useSudo = Boolean.TRUE.equals(request.get("useSudo"));
-        return ResponseEntity.ok(dockerEngineService.execHostCommand(id, command, useSudo));
+        String cwd = request.get("cwd") instanceof String s ? s : null;
+        return ResponseEntity.ok(dockerEngineService.execHostCommand(id, command, useSudo, cwd));
     }
 
     @GetMapping("/{id}/metrics")

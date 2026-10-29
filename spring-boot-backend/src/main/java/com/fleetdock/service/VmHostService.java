@@ -11,8 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -71,6 +73,7 @@ public class VmHostService {
                 .memoryUsedPercent(0.0)
                 .diskUsedPercent(0.0)
                 .useSudo(request.isUseSudo())
+                .tags(normalizeTags(request.getTags()))
                 .authCredential(credential)
                 .createdAt(LocalDateTime.now())
                 .lastChecked(LocalDateTime.now())
@@ -93,6 +96,9 @@ public class VmHostService {
         existing.setUseSudo(request.isUseSudo());
         if (request.getEnvironment() != null && !request.getEnvironment().isBlank()) {
             existing.setEnvironment(request.getEnvironment());
+        }
+        if (request.getTags() != null) {
+            existing.setTags(normalizeTags(request.getTags()));
         }
         if (request.getOs() != null && !request.getOs().isBlank()) {
             existing.setOs(request.getOs());
@@ -151,6 +157,15 @@ public class VmHostService {
         }
 
         return vmHostRepository.save(existing);
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null) return new ArrayList<>();
+        return tags.stream()
+                .filter(t -> t != null && !t.isBlank())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     @Transactional

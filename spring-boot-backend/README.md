@@ -9,18 +9,40 @@ Production-ready Spring Boot backend for centralized multi-VM host registration,
 - Maven 3.9+ (or use Docker)
 - Docker Engine installed locally or on remote VMs
 
-### 1. Run Locally with Embedded H2 (Zero Setup)
+### 1. Run Locally with MySQL
+Start a local MySQL server. The backend connects to `localhost:3306`, creates the `fleetdock` database if needed, and uses `root` with a blank password by default. Override the connection settings if your local MySQL uses different credentials:
+```bash
+# PowerShell
+$env:SPRING_DATASOURCE_USERNAME = "your-mysql-user"
+$env:SPRING_DATASOURCE_PASSWORD = "your-mysql-password"
+
+# macOS/Linux
+export SPRING_DATASOURCE_USERNAME="your-mysql-user"
+export SPRING_DATASOURCE_PASSWORD="your-mysql-password"
+```
+
 ```bash
 cd spring-boot-backend
 mvn clean spring-boot:run
 ```
-The server will start on port `http://localhost:8080`.
-The H2 Database web console is available at `http://localhost:8080/h2-console`.
+The server will start on port `http://localhost:8080`. You can override `SPRING_DATASOURCE_URL` to connect to another MySQL instance or database.
+
+To use the embedded H2 database instead, set `SPRING_DATASOURCE_URL=jdbc:h2:mem:fleetdock;DB_CLOSE_DELAY=-1;MODE=PostgreSQL`, `SPRING_DATASOURCE_USERNAME=sa`, and leave the password blank. Its console is available at `http://localhost:8080/h2-console`.
 
 ### 2. Run with Docker Compose (Spring Boot + PostgreSQL)
 ```bash
 docker compose up --build -d
 ```
+
+### Run with MySQL instead
+Set the required secrets, then start the MySQL compose file:
+```bash
+$env:MYSQL_ROOT_PASSWORD = "your-root-password"
+$env:MYSQL_PASSWORD = "your-app-password"
+$env:VAULT_MASTER_KEY = "your-long-random-vault-key"
+docker compose -f docker-compose.mysql.yml up --build -d
+```
+On macOS/Linux, export the same three environment variables before running Compose. The MySQL database persists in the `fleetdock_mysql_data` volume. You can also connect to an existing MySQL instance by setting `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`; the JDBC driver is selected from the URL.
 
 ### 3. Connect from FleetDock Web Dashboard
 In the FleetDock web dashboard, toggle the backend connection to `http://localhost:8080` (or leave on the built-in full-stack API).

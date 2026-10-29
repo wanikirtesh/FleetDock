@@ -76,6 +76,18 @@ public class SshDockerExecutorService {
         }
     }
 
+    /** Runs a command as one turn of a persistent-feeling shell session (keeps cwd, real exit code). */
+    public Map<String, Object> execHostShellCommand(VmHost host, String shellCommand, boolean withSudo, String cwd) {
+        String wrapped = "sh -c " + ShellSessionWrapper.quote(ShellSessionWrapper.wrap(shellCommand, cwd));
+        Map<String, Object> raw = execHostCommand(host, wrapped, withSudo);
+        Map<String, Object> parsed = ShellSessionWrapper.parse(String.valueOf(raw.get("output")), cwd);
+        if (!String.valueOf(raw.get("output")).contains("__FD_CWD__")) {
+            return raw;
+        }
+        parsed.put("latencyMs", raw.getOrDefault("latencyMs", 0));
+        return parsed;
+    }
+
     private String executeSshCommand(VmHost host, String dockerSubCommand, boolean withSudo) throws Exception {
         String fullCommand = withSudo ? "sudo -S -p '' docker " + dockerSubCommand : "docker " + dockerSubCommand;
         return executeRawCommandOnHost(host, fullCommand, withSudo);
@@ -462,23 +474,12 @@ public class SshDockerExecutorService {
         }
     }
 
-    public Map<String, Object> execCommand(VmHost host, String containerId, String command) {
+    public Map<String, Object> execCommand(VmHost host, String containerId, String command, String cwd) {
         try {
-            String escaped = command.replace("\\", "\\\\").replace("\"", "\\\"");
-            String cmd = "exec " + containerId + " sh -c \"" + escaped + "\" 2>&1";
-            String output;
-            int exitCode = 0;
-            try {
-                output = executeCommandWithFallback(host, cmd);
-            } catch (Exception cmdEx) {
-                try {
-                    output = executeCommandWithFallback(host, "exec " + containerId + " " + command + " 2>&1");
-                } catch (Exception directEx) {
-                    output = directEx.getMessage();
-                    exitCode = 1;
-                }
-            }
-            return Map.of("output", output, "exitCode", exitCode);
+            String wrapped = ShellSessionWrapper.wrap(command, cwd);
+            String output = executeCommandWithFallback(host,
+                    "exec " + containerId + " sh -c " + ShellSessionWrapper.quote(wrapped) + " 2>&1");
+            return ShellSessionWrapper.parse(output, cwd);
         } catch (Exception e) {
             log.error("SSH Docker exec failed on {} for container {}: {}", host.getIp(), containerId, e.getMessage());
             return Map.of("output", "Execution error: " + e.getMessage(), "exitCode", 1);
